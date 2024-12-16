@@ -54,7 +54,7 @@ class DarkNet53(nn.Module):
     DarkNet53 feature extractor starts at line 25 and ends at line 549
     """
 
-    def __init__(self, block: nn.Module = DarkResidualBlock):
+    def __init__(self, block: nn.Module = DarkResidualBlock, num_classes=1000):
         """Initialize the darknet53 model
 
         Args:
@@ -90,6 +90,8 @@ class DarkNet53(nn.Module):
         self.residual_blocks5 = self._make_blocks(
             block=block, in_channels=self.final_num_chs, num_blocks=4
         )
+        self.global_avg_pool = nn.AdaptiveAvgPool2d((1, 1))
+        self.fc = nn.Linear(1024, self.num_classes)
 
     def forward(self, x):
         """Forward pass through DarkNet53
@@ -113,11 +115,10 @@ class DarkNet53(nn.Module):
         out = self.conv6(inter_2)
         out = self.residual_blocks5(out)
 
-        # NOTE: classification layers removed
+        out = out.view(-1, 1024)
+        out = self.fc(out)
 
-        # Returns the final output and 2 intermediate outputs;
-        # the 2 inter outputs will be concatenated in the head
-        return out, inter_2, inter_1
+        return out
 
     def _make_blocks(self, block: nn.Module, in_channels, num_blocks) -> nn.Sequential:
         """Create a sequential object of a specific type of block
