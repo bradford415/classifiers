@@ -7,8 +7,11 @@ from torch import nn
 from torchvision.transforms import functional as F
 from tqdm import tqdm
 
-from classifiers.postprocessing.eval import (ap_per_class, get_batch_statistics,
-                                           print_eval_stats)
+from classifiers.postprocessing.eval import (
+    ap_per_class,
+    get_batch_statistics,
+    print_eval_stats,
+)
 from classifiers.postprocessing.nms import non_max_suppression
 from classifiers.utils import misc
 from classifiers.utils.box_ops import val_preds_to_img_size, xywh2xyxy

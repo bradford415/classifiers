@@ -2,7 +2,7 @@ from typing import Optional
 
 import torch
 from torch import nn
-
+from torch.nn import functional as F
 
 
 class MultiheadAttention(nn.Module):
@@ -142,11 +142,12 @@ class Attention(nn.Module):
         # this gives a `context` value about an input's location
         context = torch.matmul(attention, v)  # (batch_size, num_heads, v_len, head_dim)
         return context
-    
+
 
 class FeedForward(nn.Module):
-    """TODO"""
-    def __init__(self, dim, hidden_dim, dropout = 0.):
+    """TODO: Comment this module"""
+
+    def __init__(self, dim, hidden_dim, dropout=0.0):
         super().__init__()
         self.net = nn.Sequential(
             nn.LayerNorm(dim),
@@ -154,19 +155,18 @@ class FeedForward(nn.Module):
             nn.GELU(),
             nn.Dropout(dropout),
             nn.Linear(hidden_dim, dim),
-            nn.Dropout(dropout)
+            nn.Dropout(dropout),
         )
 
     def forward(self, x):
         return self.net(x)
-    
+
 
 class Transformer(nn.Module):
-    """TODO
-    """
+    """TODO"""
 
     def __init__(self, input_dim, depth, num_heads, embed_dim, mlp_dim):
-        """Initalize the transformer module
+        """Initialize the transformer module
 
         Args:
             input_dim: input embedding size; this is also the output size of MHA
@@ -174,7 +174,7 @@ class Transformer(nn.Module):
             num_heads: number of heads in each MHA module
             embed_dim: Total dimension of the MHA; embed_dim will be split across
                        num_heads (embed_dim // num_heads)  after it's projected
-            mlp_dim: TODO
+            mlp_dim: dimension on the hidden layer in the MLP after each MHA
 
         """
         super().__init__()
@@ -183,11 +183,15 @@ class Transformer(nn.Module):
 
         # Create a list of Transformer Encoders used in ViT
         for _ in range(depth):
-            self.layers.append(nn.ModuleList[
-                MultiheadAttention(input_dim=input_dim, embed_dim=embed_dim, num_heads=num_heads),
-                FeedForward(dim=input_dim, mlp_dim=mlp_dim)
-                ])
-    
+            self.layers.append(
+                nn.ModuleList[
+                    MultiheadAttention(
+                        input_dim=input_dim, embed_dim=embed_dim, num_heads=num_heads
+                    ),
+                    FeedForward(dim=input_dim, mlp_dim=mlp_dim),
+                ]
+            )
+
     def forward(self, x):
         """TODO"""
         # Sequentially loop through all encoders and add the residual after mha and ff
@@ -196,53 +200,89 @@ class Transformer(nn.Module):
             x = ff(x) + x
 
         return self.norm(x)
-        
 
 
-class Attention(nn.Module):
-    def __init__(self, hidden_size, num_heads, attention_dropout):
-        super().__init__()
-        self.num_attention_heads = num_heads
-        self.attention_head_size = int(hidden_size / self.num_attention_heads)
-        self.all_head_size = self.num_attention_heads * self.attention_head_size
+class ViT(nn.Module):
+    """Standard vision transformer (ViT) from the paper:
+    'An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale'
+    """
 
-        self.query = nn.Linear(hidden_size, self.all_head_size)
-        self.key = nn.Linear(hidden_size, self.all_head_size)
-        self.value = nn.Linear(hidden_size, self.all_head_size)
+    def __init__(
+        self,
+        image_size: int | tuple[int, int],
+        patch_size,
+        num_classes,
+        input_dim,
+        depth,
+        heads,
+        mlp_dim,
+        pool="cls",
+        channels=3,
+        dim_head=64,
+    ):
+        """Initialize the vision transformer
 
-        self.out = nn.Linear(hidden_size, hidden_size)
-        self.attn_dropout = nn.Dropout(attention_dropout)
-        self.proj_dropout = nn.Dropout(attention_dropout)
+        Args:
+            TODO
+            input_dim: input embedding size to the stack of transformer encoders; image patches
+                       will be projected to this size before being passed to the encoders
+        """
+        # Extract input image and patch height and width
+        image_height, image_width = (
+            (image_size, image_size) if isinstance(image_size, int) else image_size
+        )
+        self.patch_height, self.patch_width = (
+            (patch_size, patch_size) if isinstance(patch_size, int) else patch_size
+        )
 
-        self.softmax = nn.Softmax(dim=-1)
+        assert (
+            image_height % self.patch_height == 0
+            and image_width % self.forwardpatch_width == 0
+        ), "Image dimensions must be divisible by the patch size."
+        assert pool in {
+            "cls",
+            "mean",
+        }, "pool type must be either cls (cls token) or mean (mean pooling)"
 
-    def transpose_for_scores(self, x):
-        new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
-        x = x.view(*new_x_shape)
-        return x.permute(0, 2, 1, 3)
+        # Compute the number of patches and their dimension size
+        num_patches = (image_height // self.patch_height) * (
+            image_width // self.patch_width
+        )
+        self.patch_dim = channels * self.patch_height * self.patch_width
 
-    def forward(self, queries: torch.Tensor, keys: torch.Tensor, values: torch.Tensor):
-        queries = self.query(queries)
-        keys = self.key(keys)
-        values = self.value(values)
-        ###### START HEre and compare with righ 
+        self.to_patch_embedding = nn.Sequential(
+            nn.LayerNorm(patch_dim),
+            nn.Linear(patch_dim, input_dim),
+            nn.LayerNorm(patch_dim),
+        )
 
-        query_layer = self.transpose_for_scores(mixed_query_layer)
-        key_layer = self.transpose_for_scores(mixed_key_layer)
-        value_layer = self.transpose_for_scores(mixed_value_layer)
+    def forward(self, img):
+        """TODO
 
-        attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
-        attention_scores = attention_scores / math.sqrt(self.attention_head_size)
-        attention_probs = self.softmax(attention_scores)
-        weights = attention_probs if self.vis else None
-        attention_probs = self.attn_dropout(attention_probs)
+        Args:
+            TODO
+        """
+        b, c, h, w = img.shape
 
-        context_layer = torch.matmul(attention_probs, value_layer)
-        context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
-        new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
-        context_layer = context_layer.view(*new_context_layer_shape)
-        attention_output = self.out(context_layer)
-        attention_output = self.proj_dropout(attention_output)
-        return attention_output, weights
-    
+        # Convert batch of images to patchs
+        # (b, c, h, w) -> (b, c, num_p, p_h, num_p, p_w) 
+        # -> (b, num_p, num_p, p_h, p_w, c) -> (b, num_p, p_h * p_w * c)
+        x = (
+            img.reshape(
+                b,
+                c,
+                h // self.patch_height,
+                self.patch_height,
+                w // self.patch_width,
+                self.patch_width,
+            )
+            .permute(0, 2, 4, 3, 5, 1)
+            .reshape(b, -1, self.patch_height * self.patch_width * c)
+        )
 
+        assert len(x.shape) == 3 and x.shape[-1] == self.patch_dim
+
+        # Embed patches
+        x = self.to_patch_embedding(x)
+
+        ## START HERE!!!!!

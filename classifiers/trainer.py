@@ -111,7 +111,6 @@ class Trainer:
             # Evaluate the model on the validation set
             log.info("\nEvaluating on validation set — epoch %d", epoch)
 
-
             ############# TODO MODIFY SO WE CAN PLOT THE VAL LOSS AS WELL #######################
 
             # TODO: probably save metrics output into csv
