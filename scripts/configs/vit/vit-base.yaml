@@ -1,0 +1,18 @@
+# Configuration file for the classifier
+---
+
+# Classifier parameters
+classifier:
+  # the classifier to train; must exist in classifier_map in train.py
+  name: "darknet53"
+
+  hidden_size: 768
+
+  # TODO: comment these
+  transformer:
+    mlp_dim: 3072
+    num_heads: 12
+    num_layers: 12
+    attention_dropout: 0.0
+    dropout: 0.1
+
