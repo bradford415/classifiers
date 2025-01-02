@@ -251,9 +251,9 @@ class ViT(nn.Module):
         self.patch_dim = channels * self.patch_height * self.patch_width
 
         self.to_patch_embedding = nn.Sequential(
-            nn.LayerNorm(patch_dim),
-            nn.Linear(patch_dim, input_dim),
-            nn.LayerNorm(patch_dim),
+            nn.LayerNorm(self.patch_dim),
+            nn.Linear(self.patch_dim, input_dim),
+            nn.LayerNorm(input_dim),
         )
 
     def forward(self, img):
@@ -285,4 +285,4 @@ class ViT(nn.Module):
         # Embed patches
         x = self.to_patch_embedding(x)
 
-        ## START HERE!!!!!
+        
