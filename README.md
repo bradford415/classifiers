@@ -2,7 +2,7 @@
 
 ## Datasets
 ### ImageNet 2012
-This section describes how to download the ImageNet ILSVRC2012 dataset and prepare it for training classification models.
+This section describes how to download the ImageNet ILSVRC2012 dataset and prepare it for training classification models. All 1000 classes are described [here](https://deeplearning.cms.waikato.ac.nz/user-guide/class-maps/IMAGENET/).
 
 TODO put instructions on running the script.
 
