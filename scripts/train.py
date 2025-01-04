@@ -157,7 +157,6 @@ def main(base_config_path: str, model_config_path):
     # model = Darknet("scripts/configs/yolov4.cfg")
     model.to(device)
 
-
     criterion = nn.CrossEntropyLoss().to(device)
 
     ## TODO: log the backbone, neck, head, and detector used.

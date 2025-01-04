@@ -4,15 +4,28 @@
 # Classifier parameters
 classifier:
   # the classifier to train; must exist in classifier_map in train.py
-  name: "darknet53"
+  name: "vit"
 
-  hidden_size: 768
+  # classification method to use and pass into the final MLP; 'cls' = extra token only, 'mean' = globally average the patches and the token
+  pool: "cls"
+
+  # dim to project the patches to; this is the input_dim for the transformer
+  patch_dim: 
 
   # TODO: comment these
   transformer:
-    mlp_dim: 3072
+
+    # number of heads in MHA
     num_heads: 12
-    num_layers: 12
+
+    # Total dim of the MHA; embed_dim will be split across num_heads (embed_dim // num_heads) after it's projected;
+    # emb_dim must be divisible by num_heads
+    emb_dim: 
+
+    # dim of the mlp hidden layer at the end of the transformer encoder
+    mlp_dim: 3072
+
     attention_dropout: 0.0
     dropout: 0.1
+
 

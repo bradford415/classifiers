@@ -163,7 +163,7 @@ class FeedForward(nn.Module):
 
 
 class Transformer(nn.Module):
-    """TODO"""
+    """Transformer encoder from the ViT paper"""
 
     def __init__(self, input_dim, depth, num_heads, embed_dim, mlp_dim):
         """Initialize the transformer module
@@ -212,20 +212,27 @@ class ViT(nn.Module):
         image_size: int | tuple[int, int],
         patch_size,
         num_classes,
-        input_dim,
+        patch_emb_dim,
         depth,
-        heads,
-        mlp_dim,
-        pool="cls",
-        channels=3,
-        dim_head=64,
+        num_heads,
+        emb_dim: int = 64,
+        mlp_dim: int = 3072,
+        pool: str = "cls",
+        channels: int = 3,
+        emb_dropout: float = 0.0,
     ):
         """Initialize the vision transformer
 
         Args:
             TODO
-            input_dim: input embedding size to the stack of transformer encoders; image patches
+            patch_emb_dim: input embedding size to the stack of transformer encoders; image patches
                        will be projected to this size before being passed to the encoders
+            depth: number of transformer encoders to stack
+            num_heads: number of heads in each MHA module
+            emb_dim: total dimension of the MHA; embed_dim will be split across
+                     num_heads (embed_dim // num_heads)  after it's projected
+            mlp_dim: dimension on the hidden layer in the MLP after each MHA
+            emb_dropout: dropout of the embedded patches right before being passed to the transformer encoder
         """
         # Extract input image and patch height and width
         image_height, image_width = (
@@ -245,16 +252,35 @@ class ViT(nn.Module):
         }, "pool type must be either cls (cls token) or mean (mean pooling)"
 
         # Compute the number of patches and their dimension size
-        num_patches = (image_height // self.patch_height) * (
+        self.num_patches = (image_height // self.patch_height) * (
             image_width // self.patch_width
         )
         self.patch_dim = channels * self.patch_height * self.patch_width
 
         self.to_patch_embedding = nn.Sequential(
             nn.LayerNorm(self.patch_dim),
-            nn.Linear(self.patch_dim, input_dim),
-            nn.LayerNorm(input_dim),
+            nn.Linear(self.patch_dim, patch_emb_dim),
+            nn.LayerNorm(patch_emb_dim),
         )
+
+        # Learned positional embeddings for all patches and the cls token (1, n_p + 1, input_dim)
+        self.pos_embedding = nn.Parameter(
+            torch.randn(1, self.num_patches + 1, patch_emb_dim)
+        )
+
+        # Extra classification token to be prepended onto the image patches;
+        # this token will be the solely responsibile for the classification prediction
+        self.cls_token = nn.Parameter(torch.randn(1, 1, patch_emb_dim))
+
+        self.dropout = nn.Dropout(emb_dropout)
+
+        self.transformer_encoder = Transformer(
+            patch_emb_dim, depth, num_heads, emb_dim, mlp_dim
+        )
+
+        # TODO: figure out if I need an nn.identity; for now leaving it out
+
+        self.mlp_head = nn.Linear(patch_emb_dim, num_classes)
 
     def forward(self, img):
         """TODO
@@ -265,7 +291,7 @@ class ViT(nn.Module):
         b, c, h, w = img.shape
 
         # Convert batch of images to patchs
-        # (b, c, h, w) -> (b, c, num_p, p_h, num_p, p_w) 
+        # (b, c, h, w) -> (b, c, num_p, p_h, num_p, p_w)
         # -> (b, num_p, num_p, p_h, p_w, c) -> (b, num_p, p_h * p_w * c)
         x = (
             img.reshape(
@@ -285,4 +311,24 @@ class ViT(nn.Module):
         # Embed patches
         x = self.to_patch_embedding(x)
 
-        
+        # Copy the classification token along the batch (b, 1, input_dim)
+        # and prepend it to the patches for each batch (b, num_p + 1, patch_dim)
+        cls_tokens = self.cls_token.repeat(b, 1, 1)
+        x = torch.cat((cls_tokens, x), dim=1)
+
+        # Add learned positional embeddings along the batch
+        x += self.pos_embedding[:, : self.num_patches + 1]  # TODO check the dim
+
+        x = self.dropout(x)
+
+        # Stack of ViT transformer encoders
+        x = self.transformer_encoder(x)
+
+        # Extract the extra cls token or use global average pooling to make the final
+        # class prediction; I believe the class token is used most often
+        x = x.mean(dim=1) if self.pool == "mean" else x[:, 0]
+
+        # Classification prediction
+        x = self.mlp_head(x)
+
+        return x

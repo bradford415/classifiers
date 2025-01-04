@@ -17,7 +17,6 @@ import torchvision.transforms.functional as F
 from PIL.Image import Image as PILImage
 
 
-
 def crop(image, target, region):
     cropped_image = F.crop(image, *region)
 

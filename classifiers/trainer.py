@@ -11,7 +11,7 @@ from torch.utils import data
 
 from classifiers.evaluate import evaluate, load_model_checkpoint
 from classifiers.utils import misc
-from classifiers.visualize import visualize_norm_img_tensors, plot_loss
+from classifiers.visualize import plot_loss, visualize_norm_img_tensors
 
 log = logging.getLogger(__name__)
 
