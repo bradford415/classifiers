@@ -9,7 +9,7 @@ from fire import Fire
 from torch import nn
 from torch.utils.data import DataLoader
 
-from classifiers.data.image_net import build_coco
+from classifiers.data.imagenet import build_coco
 from classifiers.data.collate_functions import collate_fn
 from classifiers.evaluate import evaluate, load_model_checkpoint
 from classifiers.models import Yolov3, Yolov4

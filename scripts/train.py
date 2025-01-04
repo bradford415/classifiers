@@ -10,7 +10,7 @@ from fire import Fire
 from torch import nn
 from torch.utils.data import DataLoader
 
-from classifiers.data.image_net import build_imagenet
+from classifiers.data.imagenet import build_imagenet
 from classifiers.models.darknet import Darknet
 from classifiers.trainer import Trainer
 from classifiers.utils import reproduce, schedulers

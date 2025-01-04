@@ -1,6 +1,9 @@
 #!/bin/bash
 mkdir imagenet
 cd imagenet
+
+# Source: https://image-net.org/challenges/LSVRC/2012/2012-downloads.php
+#         use the "Training images (Task 1 & 2)"
 wget https://www.image-net.org/data/ILSVRC/2012/ILSVRC2012_img_train.tar
 wget https://www.image-net.org/data/ILSVRC/2012/ILSVRC2012_img_val.tar
 
