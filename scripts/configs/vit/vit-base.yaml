@@ -6,6 +6,8 @@ classifier:
   # the classifier to train; must exist in classifier_map in train.py
   name: "vit"
 
+# Vision transformer parameters
+vit:
   # classification method to use and pass into the final MLP; 'cls' = extra token only, 'mean' = globally average the patches and the token
   pool: "cls"
 

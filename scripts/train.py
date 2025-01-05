@@ -11,11 +11,11 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from classifiers.data.imagenet import build_imagenet
-from classifiers.models.darknet import Darknet
+from classifiers.models import darknet53, vit
 from classifiers.trainer import Trainer
 from classifiers.utils import reproduce, schedulers
 
-detectors_map: Dict[str, Any] = {"yolov3": Yolov3, "yolov4": Yolov4}
+classifier_map: Dict[str, Any] = {"vit": vit}
 
 dataset_map: Dict[str, Any] = {"ImageNet": build_imagenet}
 
@@ -122,48 +122,28 @@ def main(base_config_path: str, model_config_path):
     # during the last batch, the batch_size will be different if the length of the dataset is not divisible by the batch_size
     dataloader_train = DataLoader(
         dataset_train,
-        collate_fn=collate_fn,
         drop_last=True,
         **train_kwargs,
     )
     dataloader_val = DataLoader(
         dataset_val,
-        collate_fn=collate_fn,
         drop_last=True,
         **val_kwargs,
     )
 
-    # Initalize the detector backbone; typically some feature extractor
-    backbone_name = model_config["backbone"]["name"]
-    if backbone_name in model_config["backbone"]:
-        backbone_params = model_config["backbone"][backbone_name]
-    else:
-        backbone_params = {}
-    backbone = backbone_map[backbone_name](**backbone_params)
-
-    # detector args
-    model_components = {
-        "backbone": backbone,
-        "num_classes": dataset_train.num_classes,
-    }
-
-    # Initialize detection model and transfer to GPU
-    detector_name = model_config["detector"]
-    model = detectors_map[detector_name](**model_components)
+    # Initalize the classifier and extract initialization the parameters
+    classifier_name = model_config["classifier"]["name"]
+    classifier_params = model_config[classifier_name]
+    model = classifier_map[classifier_name](**classifier_params)
 
     # Compute and log the number of params in the model
     reproduce.model_info(model)
 
-    # model = Darknet("scripts/configs/yolov4.cfg")
     model.to(device)
-
     criterion = nn.CrossEntropyLoss().to(device)
 
-    ## TODO: log the backbone, neck, head, and detector used.
-    log.info("\nmodel architecture")
     log.info("\nclassifier: %s", model_config["classifier"]["name"])
 
-    # criterion = Yolo_loss(device=device, batch=base_config["train"]["batch_size"], n_classes=80)
 
     # Extract the train arguments from base config
     train_args = base_config["train"]
@@ -187,9 +167,7 @@ def main(base_config_path: str, model_config_path):
         log_train_steps=base_config["log_train_steps"],
     )
 
-    ## TODO: Implement checkpointing somewhere around here (or maybe in Trainer)
-
-    # Save configuration files
+    # Save configuration files for reproducibility
     reproduce.save_configs(
         config_dicts=[base_config, model_config],
         save_names=["base_config.json", "model_config.json"],

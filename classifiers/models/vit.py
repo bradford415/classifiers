@@ -210,11 +210,11 @@ class ViT(nn.Module):
     def __init__(
         self,
         image_size: int | tuple[int, int],
-        patch_size,
-        num_classes,
-        patch_emb_dim,
-        depth,
-        num_heads,
+        patch_size: int,
+        num_classes: int,
+        patch_emb_dim: int,
+        depth: int,
+        num_heads: int,
         emb_dim: int = 64,
         mlp_dim: int = 3072,
         pool: str = "cls",
@@ -332,3 +332,21 @@ class ViT(nn.Module):
         x = self.mlp_head(x)
 
         return x
+
+
+# TODO put which version in function name
+def vit(
+    image_size: int | tuple[int, int],
+    patch_size: int,
+    num_classes: int,
+    patch_emb_dim: int,
+    depth: int,
+    num_heads: int,
+    emb_dim: int = 64,
+    mlp_dim: int = 3072,
+    pool: str = "cls",
+    channels: int = 3,
+    emb_dropout: float = 0.0,
+):
+    """TODO"""
+    ViT()
