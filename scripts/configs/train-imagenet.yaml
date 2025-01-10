@@ -72,7 +72,8 @@ vit_learning_config:
 
   betas: [0.9, 0.999]
   
-  # TODO figure out what this should be
-  lr_scheduler: "lambda_lr"
+  lr_scheduler: "cosine_annealing"
+  lr_params:
+
 
 

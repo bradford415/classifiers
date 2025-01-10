@@ -25,12 +25,17 @@ optimizer_map = {
     "sgd": torch.optim.SGD,
 }
 
+scheduler_map = {
+    "step_lr": torch.optim.lr_scheduler.StepLR,
+    "lambda_lr": torch.optim.lr_scheduler.LambdaLR,
+    "cosine_annealing": schedulers.make_cosine_anneal, # quickly decays lr then spikes back up for a "warm restart" https://paperswithcode.com/method/cosine-annealing
+}
 
 # Initialize the root logger
 log = logging.getLogger(__name__)
 
 
-def main(base_config_path: str, model_config_path):
+def main(base_config_path: str, model_config_path: str):
     """Entrypoint for the project
 
     Args:
@@ -118,8 +123,6 @@ def main(base_config_path: str, model_config_path):
         dataset_split="val", dev_mode=dev_mode, **dataset_kwargs
     )
 
-    # drop_last is true becuase the loss function intializes masks with the first dimension being the batch_size;
-    # during the last batch, the batch_size will be different if the length of the dataset is not divisible by the batch_size
     dataloader_train = DataLoader(
         dataset_train,
         drop_last=True,
@@ -143,7 +146,6 @@ def main(base_config_path: str, model_config_path):
     criterion = nn.CrossEntropyLoss().to(device)
 
     log.info("\nclassifier: %s", model_config["classifier"]["name"])
-
 
     # Extract the train arguments from base config
     train_args = base_config["train"]
@@ -197,13 +199,14 @@ def _init_training_objects(
     scheduler: str = "step_lr",
     learning_rate: float = 1e-4,
     weight_decay: float = 1e-4,
+    betas: Iterable[float, float] = (0.9, 0.999),
     lr_drop: int = 200,
 ):
     optimizer = optimizer_map[optimizer](
-        model_params, lr=learning_rate, weight_decay=weight_decay
+        model_params, lr=learning_rate, weight_decay=weight_decay, betas=betas
     )
     lr_scheduler = scheduler_map[scheduler](
-        optimizer, schedulers.burnin_schedule_modified
+        optimizer
     )
 
     return optimizer, lr_scheduler

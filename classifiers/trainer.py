@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Iterable, List, Optional, Tuple
 
 import numpy as np
+import pandas as pd
 import torch
 from torch import nn
 from torch.utils import data
@@ -36,6 +37,9 @@ class Trainer:
         self.output_dir = Path(output_dir)
         self.log_train_steps = log_train_steps
 
+        # mixed precision training not yet supported on mps
+        self.enable_amp = True if not self.device.type == "mps" else False
+
     def train(
         self,
         model: nn.Module,
@@ -44,7 +48,6 @@ class Trainer:
         dataloader_val: data.DataLoader,
         optimizer: torch.optim.Optimizer,
         scheduler: torch.optim.lr_scheduler,
-        class_names: list[str],
         start_epoch: int = 1,
         epochs: int = 100,
         ckpt_epochs: int = 10,
@@ -53,19 +56,19 @@ class Trainer:
         """Trains a model
 
         Specifically, this method trains a model for n epochs and evaluates on the validation set.
-        A model checkpoint is saved at user-specified intervals
+        A model checkpoint is saved at user-specified intervals.
 
         Args:
-            model: A pytorch model to be trained
-            criterion: The loss function to use for training
-            dataloader_train: Torch dataloader to loop through the train dataset
-            dataloader_val: Torch dataloader to loop through the val dataset
-            optimizer: Optimizer which determines how to update the weights
-            scheduler: Scheduler which determines how to change the learning rate
-            start_epoch: Epoch to start the training on; starting at 1 is a good default because it makes
+            model: pytorch model to be trained
+            criterion: the loss function to use for training
+            dataloader_train: torch dataloader to loop through the train dataset
+            dataloader_val: torch dataloader to loop through the val dataset
+            optimizer: optimizer which determines how to update the weights
+            scheduler: scheduler which determines how to change the learning rate
+            start_epoch: epoch to start the training on; starting at 1 is a good default because it makes
                          checkpointing and calculations more intuitive
-            epochs: The epoch to end training on; unless starting from a check point, this will be the number of epochs to train for
-            ckpt_every: Save the model after n epochs
+            epochs: the epoch to end training on; unless starting from a check point, this will be the number of epochs to train for
+            ckpt_every: save the model after n epochs
         """
         log.info("\ntraining started\n")
 
@@ -77,21 +80,26 @@ class Trainer:
                 "NOTE: A checkpoint file was provided, the model will resume training at epoch %d",
                 start_epoch,
             )
+        
+
+        if self.enable_amp:
+            log.info("using mixed precision training")
+            scaler = torch.amp.GradScaler(self.device.type)
+        else:
+            scaler = None
 
         total_train_start_time = time.time()
 
         last_best_path = None
 
-        # Visualize the first batch for each dataloader; manually verifies data augmentation correctness
-        self._visualize_batch(dataloader_train, "train", class_names)
-        self._visualize_batch(dataloader_val, "val", class_names)
+        # TODO: Implement the average meters
 
-        best_ap = 0.0
+        # NOTE: the dataloaders can be visualized with scripts/visualizations/dataloaders.py
+
         train_loss = []
         val_loss = []
         for epoch in range(start_epoch, epochs + 1):
             model.train()
-            ## TODO: Implement tensorboard as shown here: https://github.com/eriklindernoren/PyTorch-YOLOv3/blob/master/pytorchyolo/utils/logger.py#L6
 
             # Track the time it takes for one epoch (train and val)
             one_epoch_start_time = time.time()
@@ -104,24 +112,27 @@ class Trainer:
                 optimizer,
                 scheduler,
                 epoch,
-                class_names,
+                scaler
             )
+
+            ######### START HERE ##############
+
             train_loss.append(epoch_train_loss)
 
             # Evaluate the model on the validation set
             log.info("\nEvaluating on validation set — epoch %d", epoch)
 
-            ############# TODO MODIFY SO WE CAN PLOT THE VAL LOSS AS WELL #######################
 
             # TODO: probably save metrics output into csv
             metrics_output, image_detections = self._evaluate(
-                model, criterion, dataloader_val, class_names=class_names
+                model, criterion, dataloader_val
             )
 
-            plot_loss(train_loss, save_dir=str(self.output_dir))
+            plot_loss(train_loss, val_loss, save_dir=str(self.output_dir))
 
-            precision, recall, AP, f1, ap_class = metrics_output
-            mAP = AP.mean()
+            # Create csv file of training stats per epoch
+            train_dict = {"epoch": list(np.arange(start_epoch, epoch+1)), "train_loss": train_loss, "val_loss": val_loss, "mAP": epoch_mAP}
+            pd.DataFrame(train_dict).to_csv(self.output_dir / "train_stats.csv", index=False)
 
             # Save the model every ckpt_epochs
             if (epoch) % ckpt_epochs == 0:
@@ -179,61 +190,60 @@ class Trainer:
         optimizer: torch.optim.Optimizer,
         scheduler: torch.optim.lr_scheduler,
         epoch: int,
-        class_names: List[str],
+        scaler: torch.amp,
     ):
         """Train one epoch
 
         Args:
-            model: Model to train
-            criterion: Loss function
-            dataloader_train: Dataloader for the training set
-            optimizer: Optimizer to update the models weights
-            scheduler: Learning rate scheduler to update the learning rate
-            epoch: Current epoch; used for logging purposes
+            model: pytorch model to train
+            criterion: loss function
+            dataloader_train: dataloader for the training set
+            optimizer: optimizer to update the models weights
+            scheduler: learning rate scheduler to update the learning rate
+            epoch: current epoch; used for logging purposes
+            scaler: scaler for mixed precision
         """
         epoch_loss = []
+        epoch_lr = [] # Store lr every epoch so I can visualize the scheduler
         for steps, (samples, targets, annotations) in enumerate(dataloader_train, 1):
             samples = samples.to(self.device)
             targets = targets.to(self.device)
-            # targets = [
-            #     {
-            #         key: val.to(self.device) if isinstance(val, torch.Tensor) else val
-            #         for key, val in t.items()
-            #     }
-            #     for t in targets
-            # ]
 
+            with torch.autocast(
+                device_type=self.device.type,
+                dtype=torch.float16,
+                enabled=self.enable_amp,
+            ):
+                preds = model(samples)
+                class_preds = torch.argmax(preds, dim=-1)
+
+                loss = criterion(class_preds, targets)
+
+            
+            # Calculate gradients and updates weights
+            if self.enable_amp:
+                scaler.scale(loss).backward()
+            else:
+                loss.backward()
+            
+            optimizer.step()
             optimizer.zero_grad()
 
-            # list of preds at all 3 scales;
-            # bbox_preds[i] (B, (5+n_class)*num_anchors, out_w, out_h)
-            bbox_preds = model(samples)
+            epoch_loss.append(loss.detach().cpu())
+            # TODO: not sure if this is on the computation graph or if I have to detach it (probably not)
+            curr_lr = optimizer.state_dict()["param_groups"][0]["lr"]
+            
+            epoch_lr.append(curr_lr)
 
-            # final_loss, loss_xy, loss_wh, loss_obj, loss_cls, lossl2 = criterion(
-            #     bbox_preds, targets, model
-            # ) # yolov4
-            # loss_components = misc.to_cpu(
-            #     torch.stack([loss_xy, loss_wh, loss_obj, loss_cls, lossl2])
-            # )
 
-            total_loss, loss_components = criterion(bbox_preds, targets, model)
-
-            # Calculate gradients and updates weights
-            total_loss.backward()
-            optimizer.step()
-
-            epoch_loss.append(total_loss.detach().cpu())
-
-            # Calling scheduler step increments a counter which is passed to the lambda function;
-            # if .step() is called after every batch, then it will pass the current step;
-            # if .step() is called after every epoch, then it will pass the epoch number;
-            # this counter is persistent so every epoch it will continue where it left off i.e., it will not reset to 0
-            scheduler.step()
+            # Increment lr scheduler every batch
+            if scheduler is not None:
+                scheduler.step()
 
             if (steps) % 100 == 0:
                 log.info(
                     "Current learning_rate: %s\n",
-                    optimizer.state_dict()["param_groups"][0]["lr"],
+                    curr_lr,
                 )
 
             if (steps) % self.log_train_steps == 0:
@@ -242,7 +252,7 @@ class Trainer:
                     epoch,
                     steps,
                     len(dataloader_train),
-                    total_loss.item(),
+                    loss.item(),
                 )
 
         return np.array(epoch_loss).mean()
