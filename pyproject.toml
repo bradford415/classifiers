@@ -12,6 +12,7 @@ license = "LICENSE.txt"
 [tool.poetry.dependencies]
 python = ">3.9"
 matplotlib = "*"
+pandas = "*"
 pytest = "*"
 pyyaml = "*"
 fire = "*"

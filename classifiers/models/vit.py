@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Union
 
 import torch
 from torch import nn
@@ -209,7 +209,7 @@ class ViT(nn.Module):
 
     def __init__(
         self,
-        image_size: int | tuple[int, int],
+        image_size: Union[int, tuple[int, int]],
         patch_size: int,
         num_classes: int,
         patch_emb_dim: int,
@@ -336,7 +336,7 @@ class ViT(nn.Module):
 
 # TODO put which version in function name
 def vit(
-    image_size: int | tuple[int, int],
+    image_size: Union[int, tuple[int, int]],
     patch_size: int,
     num_classes: int,
     patch_emb_dim: int,

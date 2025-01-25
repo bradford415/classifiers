@@ -4,8 +4,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from classifiers.models.layers.common import ConvNormLRelu
-from classifiers.models.layers.yolo import YoloLayer
-from classifiers.utils.box_ops import get_region_boxes
 
 
 class DarkResidualBlock(nn.Module):

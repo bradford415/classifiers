@@ -7,13 +7,6 @@ from torch import nn
 from torchvision.transforms import functional as F
 from tqdm import tqdm
 
-from classifiers.postprocessing.eval import (ap_per_class,
-                                             get_batch_statistics,
-                                             print_eval_stats)
-from classifiers.postprocessing.nms import non_max_suppression
-from classifiers.utils import misc
-from classifiers.utils.box_ops import val_preds_to_img_size, xywh2xyxy
-
 log = logging.getLogger(__name__)
 
 
@@ -21,9 +14,7 @@ log = logging.getLogger(__name__)
 def evaluate(
     model: nn.Module,
     dataloader_test: Iterable,
-    class_names: List,
-    img_size: int = 416,
-    output_path: Optional[str] = None,
+    criterion: nn.Module,
     device: torch.device = torch.device("cpu"),
 ) -> Tuple[Tuple, List]:
     """A single forward pass to evluate the val set after training an epoch
@@ -43,76 +34,27 @@ def evaluate(
     """
     model.eval()
 
-    labels = []
-    sample_metrics = []  # List of tuples (true positives, cls_confs, cls_labels)
-    image_paths = []
-    final_preds = []
-    for steps, (samples, targets, target_meta) in enumerate(
+    losses = AverageMeter()
+    top1 = AverageMeter()
+    top5 = AverageMeter()
+
+    for steps, (samples, targets) in enumerate(
         tqdm(dataloader_test, desc="Evaluating", ncols=100)
     ):
-        # NOTE: I don't think we need to move targets to gpu during eval
         samples = samples.to(device)
+        targets = targets.to(device)
 
-        # Extract target labels and convert target boxes to xyxy; extract image paths for visualization
-        labels += targets[:, 1].tolist()
-        image_paths.append(target_meta[0]["image_path"])
+        # (b, num_classes)
+        preds = model(samples)
 
-        targets[:, 2:] = xywh2xyxy(targets[:, 2:])
-        targets[:, 2:] *= img_size
+        loss = criterion(preds, targets)
 
-        # targets = targets.to(device)
+        acc1, acc5 = topk_accuracy(preds, targets, topk=(1, 5))
+        losses.update(loss.item(), samples.shape[0])
+        top1.update(acc1[0], samples.shape[0])
+        top5.update(acc5[0], samples.shape[0])
 
-        # # Extract object labels from all samples in the batch into a 1d python list
-        # for target in targets:
-        #     # extract labels (b*labels_per_img,) and image paths for visualization
-        #     labels += target["labels"].tolist()
-
-        #     # convert bbox yolo format to xyxy
-        #     target["boxes"] = cxcywh_to_xyxy(target["boxes"])
-
-        # (b, num_preds, 5 + num_classes) where 5 is (tl_x, tl_y, br_x, br_y, objectness)
-
-        predictions = model(samples)
-
-        # Transfer preds to CPU for post processing
-        # predictions = misc.to_cpu(predictions)
-
-        # TODO: define these thresholds in the config file under postprocessing maybe?
-        # TODO: this is wrong I'm pretty sure; list (b,) of tensor predictions (max_nms_preds, 6)
-        # where 6 = (tl_x, tl_y, br_x, br_y, conf, cls)
-
-        # nms_preds = non_max_suppression(predictions, conf_thres=0.01, iou_thres=0.5)
-        nms_preds = non_max_suppression(predictions, conf_thres=0.1, iou_thres=0.5)
-        final_preds += nms_preds
-
-        ################### START HERE COMPARE WITH ULTRALYTICS ################
-
-        # [[TPs, predicted_scores, pred_labels], ..., num_val_images]
-        sample_metrics += get_batch_statistics(nms_preds, targets, iou_threshold=0.5)
-
-    # No detections over whole validation set
-    if len(sample_metrics) == 0:
-        log.info("---- No detections over whole validation set ----")
-        return None
-
-    # Concatenate sample statistics
-    true_positives, pred_scores, pred_labels = [
-        np.concatenate(x, axis=0) for x in list(zip(*sample_metrics))
-    ]
-
-    assert (
-        true_positives.ndim == 1
-        and true_positives.shape == pred_scores.shape == pred_labels.shape
-    )
-
-    metrics_output = ap_per_class(true_positives, pred_scores, pred_labels, labels)
-
-    print_eval_stats(metrics_output, class_names, verbose=True)
-
-    # Pair the image paths with the final predictions to visualize
-    image_detections = list(zip(image_paths, final_preds))
-
-    return metrics_output, image_detections
+    return losses, acc1
 
 
 def load_model_checkpoint(
@@ -149,3 +91,48 @@ def load_model_checkpoint(
     start_epoch = weights["epoch"]
 
     return start_epoch
+
+
+class AverageMeter(object):
+    """Computes and stores the average and current value"""
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
+
+    def update(self, val, n=1):
+        self.val = val
+        self.sum += val * n
+        self.count += n
+        self.avg = self.sum / self.count
+
+
+def topk_accuracy(output, target, topk: Iterable = (1,)):
+    """Computes the accuracy over the k top predictions for the specified values of k
+
+    Args:
+        TODO
+        topk: iterable of k values to compute the top k accuracy over
+    """
+    # TODO: comment this function
+    with torch.no_grad():
+
+        maxk = max(topk)
+        batch_size = target.shape[0]
+
+        _, pred = output.topk(maxk, 1, True, True)
+
+        pred = pred.t()
+
+        correct = pred.eq(target.view(1, -1).expand_as(pred))
+
+        res = []
+        for k in topk:
+            correct_k = correct[:k].view(-1).float().sum(0, keepdim=True)
+            res.append(correct_k.mul_(100.0 / batch_size))
+        return res

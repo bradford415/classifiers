@@ -11,8 +11,6 @@ from matplotlib.ticker import NullLocator
 from PIL import Image
 
 from classifiers.data.transforms import Unnormalize
-from classifiers.utils.box_ops import rescale_boxes
-from classifiers.utils.misc import to_cpu
 
 matplotlib.use("Agg")
 
@@ -37,7 +35,7 @@ def visualize_norm_img_tensors(
 
     un_norm = Unnormalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
 
-    img_tensors = to_cpu(img_tensors)
+    img_tensors = img_tensors.detach().to("cpu")
 
     output_dir.mkdir(parents=True, exist_ok=True)
 

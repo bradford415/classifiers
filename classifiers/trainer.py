@@ -10,8 +10,8 @@ import torch
 from torch import nn
 from torch.utils import data
 
-from classifiers.evaluate import evaluate, load_model_checkpoint
-from classifiers.utils import misc
+from classifiers.evaluate import (AverageMeter, evaluate,
+                                  load_model_checkpoint, topk_accuracy)
 from classifiers.visualize import plot_loss, visualize_norm_img_tensors
 
 log = logging.getLogger(__name__)
@@ -80,7 +80,6 @@ class Trainer:
                 "NOTE: A checkpoint file was provided, the model will resume training at epoch %d",
                 start_epoch,
             )
-        
 
         if self.enable_amp:
             log.info("using mixed precision training")
@@ -96,6 +95,7 @@ class Trainer:
 
         # NOTE: the dataloaders can be visualized with scripts/visualizations/dataloaders.py
 
+        best_acc = 0.0
         train_loss = []
         val_loss = []
         for epoch in range(start_epoch, epochs + 1):
@@ -106,13 +106,7 @@ class Trainer:
 
             # Train one epoch
             epoch_train_loss = self._train_one_epoch(
-                model,
-                criterion,
-                dataloader_train,
-                optimizer,
-                scheduler,
-                epoch,
-                scaler
+                model, criterion, dataloader_train, optimizer, scheduler, epoch, scaler
             )
 
             ######### START HERE ##############
@@ -122,17 +116,23 @@ class Trainer:
             # Evaluate the model on the validation set
             log.info("\nEvaluating on validation set — epoch %d", epoch)
 
-
             # TODO: probably save metrics output into csv
-            metrics_output, image_detections = self._evaluate(
-                model, criterion, dataloader_val
-            )
+            val_losses, acc1_meter = self._evaluate(model, criterion, dataloader_val)
+
+            acc1 = acc1_meter.avg
 
             plot_loss(train_loss, val_loss, save_dir=str(self.output_dir))
 
             # Create csv file of training stats per epoch
-            train_dict = {"epoch": list(np.arange(start_epoch, epoch+1)), "train_loss": train_loss, "val_loss": val_loss, "mAP": epoch_mAP}
-            pd.DataFrame(train_dict).to_csv(self.output_dir / "train_stats.csv", index=False)
+            train_dict = {
+                "epoch": list(np.arange(start_epoch, epoch + 1)),
+                "train_loss": train_loss,
+                "val_loss": val_loss,
+                "mAP": epoch_mAP,
+            }
+            pd.DataFrame(train_dict).to_csv(
+                self.output_dir / "train_stats.csv", index=False
+            )
 
             # Save the model every ckpt_epochs
             if (epoch) % ckpt_epochs == 0:
@@ -142,24 +142,24 @@ class Trainer:
                     model, optimizer, epoch, save_path=ckpt_path, lr_scheduler=scheduler
                 )
 
-            # Save and overwrite the checkpoint with the highest mAP
-            if round(mAP, 4) > round(best_ap, 4):
-                best_ap = mAP
+            # Save and overwrite the checkpoint with the highest top 1 accuracy
+            if round(acc1, 4) > round(best_acc, 4):
+                best_acc = acc1
 
-                mAP_str = f"{mAP*100:.2f}".replace(".", "-")
-                best_path = self.output_dir / "checkpoints" / f"best_mAP_{mAP_str}.pt"
+                mAP_str = f"{acc1*100:.2f}".replace(".", "-")
+                best_path = self.output_dir / "checkpoints" / f"best_acc_{mAP_str}.pt"
                 best_path.parents[0].mkdir(parents=True, exist_ok=True)
 
                 log.info(
-                    "new best mAP of %.2f found at epoch %d; saving checkpoint",
-                    mAP * 100,
+                    "new best top 1 accuracy of %.2f found at epoch %d; saving checkpoint",
+                    acc1 * 100,
                     epoch,
                 )
                 self._save_model(
                     model, optimizer, epoch, save_path=best_path, lr_scheduler=scheduler
                 )
 
-                # delete the previous best mAP model's checkpoint
+                # delete the previous best accuracy model's checkpoint
                 if last_best_path is not None:
                     last_best_path.unlink(missing_ok=True)
                 last_best_path = best_path
@@ -203,8 +203,13 @@ class Trainer:
             epoch: current epoch; used for logging purposes
             scaler: scaler for mixed precision
         """
+        # TODO: should probably move these metric functins/classes in evaluate to its own metrics.py file
+        losses = AverageMeter()
+        top1 = AverageMeter()
+        top5 = AverageMeter()
+
         epoch_loss = []
-        epoch_lr = [] # Store lr every epoch so I can visualize the scheduler
+        epoch_lr = []  # Store lr every epoch so I can visualize the scheduler
         for steps, (samples, targets, annotations) in enumerate(dataloader_train, 1):
             samples = samples.to(self.device)
             targets = targets.to(self.device)
@@ -214,27 +219,30 @@ class Trainer:
                 dtype=torch.float16,
                 enabled=self.enable_amp,
             ):
+                # (b, num_classes)
                 preds = model(samples)
-                class_preds = torch.argmax(preds, dim=-1)
 
-                loss = criterion(class_preds, targets)
+                loss = criterion(preds, targets)
 
-            
+                acc1, acc5 = topk_accuracy(preds, targets, topk=(1, 5))
+                losses.update(acc1[0], samples.shape[0])
+                top1.update(acc1[0], samples.shape[0])
+                top5.update(acc5[0], samples.shape[0])
+
             # Calculate gradients and updates weights
             if self.enable_amp:
                 scaler.scale(loss).backward()
             else:
                 loss.backward()
-            
+
             optimizer.step()
             optimizer.zero_grad()
 
             epoch_loss.append(loss.detach().cpu())
             # TODO: not sure if this is on the computation graph or if I have to detach it (probably not)
             curr_lr = optimizer.state_dict()["param_groups"][0]["lr"]
-            
-            epoch_lr.append(curr_lr)
 
+            epoch_lr.append(curr_lr)
 
             # Increment lr scheduler every batch
             if scheduler is not None:
@@ -255,7 +263,7 @@ class Trainer:
                     loss.item(),
                 )
 
-        return np.array(epoch_loss).mean()
+        return losses
 
     @torch.no_grad()
     def _evaluate(
@@ -280,7 +288,7 @@ class Trainer:
 
         # evaluate() is used by both val and test set; this can be customized in the future if needed
         # but for now validation and test behave the same
-        metrics_output, detections = evaluate(
+        loss, acc1 = evaluate(
             model,
             dataloader_val,
             class_names,
@@ -288,7 +296,7 @@ class Trainer:
             device=self.device,
         )
 
-        return metrics_output, detections
+        return loss, acc1
 
     def _save_model(
         self,

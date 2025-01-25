@@ -1,8 +1,8 @@
 import datetime
 import logging
-import tracemalloc
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Dict, Iterable, Tuple
+from typing import Any, Dict, Tuple
 
 import torch
 import yaml
@@ -11,6 +11,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from classifiers.data.imagenet import build_imagenet
+from classifiers.evaluate import topk_accuracy
 from classifiers.models import darknet53, vit
 from classifiers.trainer import Trainer
 from classifiers.utils import reproduce, schedulers
@@ -28,7 +29,7 @@ optimizer_map = {
 scheduler_map = {
     "step_lr": torch.optim.lr_scheduler.StepLR,
     "lambda_lr": torch.optim.lr_scheduler.LambdaLR,
-    "cosine_annealing": schedulers.make_cosine_anneal, # quickly decays lr then spikes back up for a "warm restart" https://paperswithcode.com/method/cosine-annealing
+    "cosine_annealing": schedulers.make_cosine_anneal,  # quickly decays lr then spikes back up for a "warm restart" https://paperswithcode.com/method/cosine-annealing
 }
 
 # Initialize the root logger
@@ -205,9 +206,7 @@ def _init_training_objects(
     optimizer = optimizer_map[optimizer](
         model_params, lr=learning_rate, weight_decay=weight_decay, betas=betas
     )
-    lr_scheduler = scheduler_map[scheduler](
-        optimizer
-    )
+    lr_scheduler = scheduler_map[scheduler](optimizer)
 
     return optimizer, lr_scheduler
 
