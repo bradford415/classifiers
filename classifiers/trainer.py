@@ -98,6 +98,7 @@ class Trainer:
         best_acc = 0.0
         train_loss = []
         val_loss = []
+        lr_vals = []
         for epoch in range(start_epoch, epochs + 1):
             model.train()
 
@@ -105,12 +106,11 @@ class Trainer:
             one_epoch_start_time = time.time()
 
             # Train one epoch
-            epoch_train_loss = self._train_one_epoch(
+            epoch_train_loss, epoch_lr = self._train_one_epoch(
                 model, criterion, dataloader_train, optimizer, scheduler, epoch, scaler
             )
-
-            ######### START HERE ##############
-
+            
+            lr_vals += epoch_lr
             train_loss.append(epoch_train_loss)
 
             # Evaluate the model on the validation set
@@ -263,7 +263,7 @@ class Trainer:
                     loss.item(),
                 )
 
-        return losses
+        return losses, epoch_lr
 
     @torch.no_grad()
     def _evaluate(
@@ -288,7 +288,7 @@ class Trainer:
 
         # evaluate() is used by both val and test set; this can be customized in the future if needed
         # but for now validation and test behave the same
-        loss, acc1 = evaluate(
+        loss, top1 = evaluate(
             model,
             dataloader_val,
             class_names,
@@ -296,7 +296,7 @@ class Trainer:
             device=self.device,
         )
 
-        return loss, acc1
+        return loss, top1
 
     def _save_model(
         self,

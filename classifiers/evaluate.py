@@ -54,7 +54,7 @@ def evaluate(
         top1.update(acc1[0], samples.shape[0])
         top5.update(acc5[0], samples.shape[0])
 
-    return losses, acc1
+    return losses, top1
 
 
 def load_model_checkpoint(
