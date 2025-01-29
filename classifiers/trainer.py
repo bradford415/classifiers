@@ -12,7 +12,7 @@ from torch.utils import data
 
 from classifiers.evaluate import (AverageMeter, evaluate,
                                   load_model_checkpoint, topk_accuracy)
-from classifiers.visualize import plot_loss, visualize_norm_img_tensors
+from classifiers.visualize import plot_loss, plot_acc1
 
 log = logging.getLogger(__name__)
 
@@ -91,14 +91,13 @@ class Trainer:
 
         last_best_path = None
 
-        # TODO: Implement the average meters
-
         # NOTE: the dataloaders can be visualized with scripts/visualizations/dataloaders.py
 
         best_acc = 0.0
         train_loss = []
         val_loss = []
         lr_vals = []
+        epoch_acc1 = []
         for epoch in range(start_epoch, epochs + 1):
             model.train()
 
@@ -106,29 +105,54 @@ class Trainer:
             one_epoch_start_time = time.time()
 
             # Train one epoch
-            epoch_train_loss, epoch_lr = self._train_one_epoch(
+            train_loss_meter, epoch_lr = self._train_one_epoch(
                 model, criterion, dataloader_train, optimizer, scheduler, epoch, scaler
             )
             
             lr_vals += epoch_lr
-            train_loss.append(epoch_train_loss)
+            train_loss.append(train_loss_meter.avg)
 
             # Evaluate the model on the validation set
             log.info("\nEvaluating on validation set — epoch %d", epoch)
 
             # TODO: probably save metrics output into csv
-            val_losses, acc1_meter = self._evaluate(model, criterion, dataloader_val)
+            val_loss_meter, acc1_meter = self._evaluate(model, criterion, dataloader_val)
+            val_loss.append(val_loss_meter.avg)
+
 
             acc1 = acc1_meter.avg
+            epoch_acc1.append(acc1)
+            
+            if acc1 > best_acc:
+                best_acc = acc1
 
-            plot_loss(train_loss, val_loss, save_dir=str(self.output_dir))
+                acc_str = f"{acc1*100:.2f}".replace(".", "-")
+                best_path = self.output_dir / "checkpoints" / f"best_acc1_{acc_str}.pt"
+                best_path.parents[0].mkdir(parents=True, exist_ok=True)
+
+                log.info(
+                    "new best top 1 accuracy of %.2f found at epoch %d; saving checkpoint",
+                    acc1 * 100,
+                    epoch,
+                )
+                self._save_model(
+                    model, optimizer, epoch, save_path=best_path, lr_scheduler=scheduler
+                )
+
+                # delete the previous best model's checkpoint to save space
+                if last_best_path is not None:
+                    last_best_path.unlink(missing_ok=True)
+                last_best_path = best_path
+
+            plot_loss(train_loss, val_loss, save_dr=str(self.output_dir))
+            plot_acc1(train_loss, save_dr=str(self.output_dir))
 
             # Create csv file of training stats per epoch
             train_dict = {
                 "epoch": list(np.arange(start_epoch, epoch + 1)),
                 "train_loss": train_loss,
                 "val_loss": val_loss,
-                "mAP": epoch_mAP,
+                "acc1": epoch_acc1,
             }
             pd.DataFrame(train_dict).to_csv(
                 self.output_dir / "train_stats.csv", index=False
@@ -210,7 +234,7 @@ class Trainer:
 
         epoch_loss = []
         epoch_lr = []  # Store lr every epoch so I can visualize the scheduler
-        for steps, (samples, targets, annotations) in enumerate(dataloader_train, 1):
+        for steps, (samples, targets)in enumerate(dataloader_train, 1):
             samples = samples.to(self.device)
             targets = targets.to(self.device)
 
