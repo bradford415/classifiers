@@ -21,8 +21,8 @@ log_train_steps: 20
 dataset:
 
   # Path to the root of the dataset; detects which path to use based on device
-  root: "/mnt/d/Datasets/coco" # windows path
-  root_mac: "/Users/bsele/datasets/coco" # mac path
+  root: "/mnt/d/datasets/imagenet" # windows path
+  root_mac: "" # mac path
 
   # Number of CPU processes the next sample in the dataset; use 0 to only use the main process
   num_workers: 4
@@ -74,6 +74,4 @@ vit_learning_config:
   
   lr_scheduler: "cosine_annealing"
   lr_params:
-
-
 
