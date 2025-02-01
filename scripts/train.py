@@ -12,11 +12,11 @@ from torch.utils.data import DataLoader
 
 from classifiers.data.imagenet import build_imagenet
 from classifiers.evaluate import topk_accuracy
-from classifiers.models import darknet53, vit
+from classifiers.models import darknet53, vit_base
 from classifiers.trainer import Trainer
 from classifiers.utils import reproduce, schedulers
 
-classifier_map: Dict[str, Any] = {"vit": vit}
+classifier_map: Dict[str, Any] = {"vit_base": vit_base}
 
 dataset_map: Dict[str, Any] = {"ImageNet": build_imagenet}
 
@@ -135,9 +135,18 @@ def main(base_config_path: str, model_config_path: str):
         **val_kwargs,
     )
 
-    # Initalize the classifier and extract initialization the parameters
+    # Extract initialization parameters for the classifier
     classifier_name = model_config["classifier"]["name"]
-    classifier_params = model_config[classifier_name]
+    if "vit" in classifier_name:
+        classifier_params = {
+            "image_size": 224,
+            "num_classes": dataset_train.num_classes,
+            **model_config[classifier_name],
+        }
+    else:
+        ValueError("classifier not recognized.")
+
+    # Initalize classifier
     model = classifier_map[classifier_name](**classifier_params)
 
     # Compute and log the number of params in the model
@@ -185,7 +194,6 @@ def main(base_config_path: str, model_config_path: str):
         "dataloader_val": dataloader_val,
         "optimizer": optimizer,
         "scheduler": lr_scheduler,
-        "class_names": dataset_train.class_names,
         "start_epoch": train_args["start_epoch"],
         "epochs": train_args["epochs"],
         "ckpt_epochs": train_args["ckpt_epochs"],
@@ -201,7 +209,6 @@ def _init_training_objects(
     learning_rate: float = 1e-4,
     weight_decay: float = 1e-4,
     betas: Iterable[float, float] = (0.9, 0.999),
-    lr_drop: int = 200,
 ):
     optimizer = optimizer_map[optimizer](
         model_params, lr=learning_rate, weight_decay=weight_decay, betas=betas

@@ -10,7 +10,6 @@ class MultiheadAttention(nn.Module):
 
     This is pretty much the same as the original MHA except the layernorm
     is at the start of the module rather than after the residual connection
-
     """
 
     def __init__(self, input_dim, embed_dim, num_heads):
@@ -29,6 +28,7 @@ class MultiheadAttention(nn.Module):
         Returns:
             Linear projected attention values (batch, seq_len, embed_dim)
         """
+        super().__init__()
         assert (
             embed_dim % num_heads == 0
         ), "The number of heads should be divisble by the attenion_dim"
@@ -46,7 +46,7 @@ class MultiheadAttention(nn.Module):
 
         self.attention = Attention()
 
-        self.linear_proj = nn.linear(embed_dim, input_dim, bias=False)
+        self.linear_proj = nn.Linear(embed_dim, input_dim, bias=False)
 
     def forward(self, queries: torch.Tensor, keys: torch.Tensor, values: torch.Tensor):
         """Forward pass through Multiheaded Attention;
@@ -71,7 +71,7 @@ class MultiheadAttention(nn.Module):
             keys.shape[0], keys.shape[1], self.num_heads, self.head_dim
         ).transpose(1, 2)
         value_heads = values.view(
-            values.shape, values.shape[1], self.num_heads, self.head_dim
+            values.shape[0], values.shape[1], self.num_heads, self.head_dim
         ).transpose(1, 2)
 
         # Compute attention on all heads
@@ -184,19 +184,23 @@ class Transformer(nn.Module):
         # Create a list of Transformer Encoders used in ViT
         for _ in range(depth):
             self.layers.append(
-                nn.ModuleList[
-                    MultiheadAttention(
-                        input_dim=input_dim, embed_dim=embed_dim, num_heads=num_heads
-                    ),
-                    FeedForward(dim=input_dim, mlp_dim=mlp_dim),
-                ]
+                nn.ModuleList(
+                    [
+                        MultiheadAttention(
+                            input_dim=input_dim,
+                            embed_dim=embed_dim,
+                            num_heads=num_heads,
+                        ),
+                        FeedForward(dim=input_dim, hidden_dim=mlp_dim),
+                    ]
+                )
             )
 
     def forward(self, x):
         """TODO"""
         # Sequentially loop through all encoders and add the residual after mha and ff
         for mha, ff in self.layers:
-            x = mha(x) + x
+            x = mha(x, x, x) + x
             x = ff(x) + x
 
         return self.norm(x)
@@ -213,18 +217,21 @@ class ViT(nn.Module):
         patch_size: int,
         num_classes: int,
         patch_emb_dim: int,
-        depth: int,
+        num_encoders: int,
         num_heads: int,
         emb_dim: int = 64,
         mlp_dim: int = 3072,
         pool: str = "cls",
         channels: int = 3,
+        attention_dropout: float = 0.0,  # TODO: I should add this back in
         emb_dropout: float = 0.0,
     ):
         """Initialize the vision transformer
 
         Args:
             TODO
+            image_size:
+            patch_size:
             patch_emb_dim: input embedding size to the stack of transformer encoders; image patches
                        will be projected to this size before being passed to the encoders
             depth: number of transformer encoders to stack
@@ -234,6 +241,7 @@ class ViT(nn.Module):
             mlp_dim: dimension on the hidden layer in the MLP after each MHA
             emb_dropout: dropout of the embedded patches right before being passed to the transformer encoder
         """
+        super().__init__()
         # Extract input image and patch height and width
         image_height, image_width = (
             (image_size, image_size) if isinstance(image_size, int) else image_size
@@ -244,7 +252,7 @@ class ViT(nn.Module):
 
         assert (
             image_height % self.patch_height == 0
-            and image_width % self.forwardpatch_width == 0
+            and image_width % self.patch_width == 0
         ), "Image dimensions must be divisible by the patch size."
         assert pool in {
             "cls",
@@ -275,12 +283,13 @@ class ViT(nn.Module):
         self.dropout = nn.Dropout(emb_dropout)
 
         self.transformer_encoder = Transformer(
-            patch_emb_dim, depth, num_heads, emb_dim, mlp_dim
+            patch_emb_dim, num_encoders, num_heads, emb_dim, mlp_dim
         )
 
         # TODO: figure out if I need an nn.identity; for now leaving it out
 
         self.mlp_head = nn.Linear(patch_emb_dim, num_classes)
+        self.pool = pool
 
     def forward(self, img):
         """TODO
@@ -335,18 +344,32 @@ class ViT(nn.Module):
 
 
 # TODO put which version in function name
-def vit(
+def vit_base(
     image_size: Union[int, tuple[int, int]],
     patch_size: int,
     num_classes: int,
     patch_emb_dim: int,
-    depth: int,
-    num_heads: int,
+    num_encoders: int,
+    num_heads: int = 12,
     emb_dim: int = 64,
     mlp_dim: int = 3072,
     pool: str = "cls",
     channels: int = 3,
+    attention_dropout: float = 0.0,
     emb_dropout: float = 0.0,
 ):
-    """TODO"""
-    ViT()
+    """Create the ViT-base classifier; see ViT() class for parameter descriptions"""
+    return ViT(
+        image_size=image_size,
+        patch_size=patch_size,
+        num_classes=num_classes,
+        patch_emb_dim=patch_emb_dim,
+        num_encoders=num_encoders,
+        num_heads=num_heads,
+        emb_dim=emb_dim,
+        mlp_dim=mlp_dim,
+        pool=pool,
+        channels=channels,
+        attention_dropout=attention_dropout,
+        emb_dropout=emb_dropout,
+    )

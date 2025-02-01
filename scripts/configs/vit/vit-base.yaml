@@ -4,30 +4,34 @@
 # Classifier parameters
 classifier:
   # the classifier to train; must exist in classifier_map in train.py
-  name: "vit"
+  name: "vit_base"
 
-# Vision transformer parameters
-vit:
+# Vision transformer parameters; most parameters defined in ViT paper Table 1
+vit_base:
   # classification method to use and pass into the final MLP; 'cls' = extra token only, 'mean' = globally average the patches and the token
   pool: "cls"
 
-  # dim to project the patches to; this is the input_dim for the transformer
-  patch_dim: 
+  patch_size: 16 # TODO: Verify this default patch size
 
-  # TODO: comment these
-  transformer:
+  # dim to project the patches to; this is the input_dim for the transformer; I believe ViT paper uses the
+  # the same patch emb dim for the Transformer emb dim but need to check
+  patch_emb_dim: 768 # TODO: Change this once I get internet back
 
-    # number of heads in MHA
-    num_heads: 12
+  # The number of transformer encoders to stack; the 'depth' of the model
+  num_encoders: 8 # TODO: verify this default value
 
-    # Total dim of the MHA; embed_dim will be split across num_heads (embed_dim // num_heads) after it's projected;
-    # emb_dim must be divisible by num_heads
-    emb_dim: 
+  ## Transformer encoder params 
+  # number of heads in MHA
+  num_heads: 12
 
-    # dim of the mlp hidden layer at the end of the transformer encoder
-    mlp_dim: 3072
+  # Total dim of the MHA; emb_dim will be split across num_heads (embed_dim // num_heads) after it's projected;
+  # emb_dim must be divisible by num_heads
+  emb_dim: 768
 
-    attention_dropout: 0.0
-    dropout: 0.1
+  # dim of the mlp hidden layer at the end of the transformer encoder
+  mlp_dim: 3072
+
+  attention_dropout: 0.0
+  emb_dropout: 0.1
 
 

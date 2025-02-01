@@ -12,7 +12,7 @@ from torch.utils import data
 
 from classifiers.evaluate import (AverageMeter, evaluate,
                                   load_model_checkpoint, topk_accuracy)
-from classifiers.visualize import plot_loss, plot_acc1
+from classifiers.visualize import plot_acc1, plot_loss
 
 log = logging.getLogger(__name__)
 
@@ -108,7 +108,7 @@ class Trainer:
             train_loss_meter, epoch_lr = self._train_one_epoch(
                 model, criterion, dataloader_train, optimizer, scheduler, epoch, scaler
             )
-            
+
             lr_vals += epoch_lr
             train_loss.append(train_loss_meter.avg)
 
@@ -116,13 +116,14 @@ class Trainer:
             log.info("\nEvaluating on validation set — epoch %d", epoch)
 
             # TODO: probably save metrics output into csv
-            val_loss_meter, acc1_meter = self._evaluate(model, criterion, dataloader_val)
+            val_loss_meter, acc1_meter = self._evaluate(
+                model, criterion, dataloader_val
+            )
             val_loss.append(val_loss_meter.avg)
-
 
             acc1 = acc1_meter.avg
             epoch_acc1.append(acc1)
-            
+
             if acc1 > best_acc:
                 best_acc = acc1
 
@@ -144,8 +145,8 @@ class Trainer:
                     last_best_path.unlink(missing_ok=True)
                 last_best_path = best_path
 
-            plot_loss(train_loss, val_loss, save_dr=str(self.output_dir))
-            plot_acc1(train_loss, save_dr=str(self.output_dir))
+            plot_loss(train_loss, val_loss, save_dir=str(self.output_dir))
+            plot_acc1(acc1, save_dir=str(self.output_dir))
 
             # Create csv file of training stats per epoch
             train_dict = {
@@ -187,10 +188,6 @@ class Trainer:
                 if last_best_path is not None:
                     last_best_path.unlink(missing_ok=True)
                 last_best_path = best_path
-
-            # Uncomment to visualize validation detections
-            # save_dir = self.output_dir / "validation" / f"epoch{epoch}"
-            # plot_all_detections(image_detections, classes=class_names, output_dir=save_dir)
 
             # Current epoch time (train/val)
             one_epoch_time = time.time() - one_epoch_start_time
@@ -234,7 +231,7 @@ class Trainer:
 
         epoch_loss = []
         epoch_lr = []  # Store lr every epoch so I can visualize the scheduler
-        for steps, (samples, targets)in enumerate(dataloader_train, 1):
+        for steps, (samples, targets) in enumerate(dataloader_train, 1):
             samples = samples.to(self.device)
             targets = targets.to(self.device)
 
@@ -249,7 +246,7 @@ class Trainer:
                 loss = criterion(preds, targets)
 
                 acc1, acc5 = topk_accuracy(preds, targets, topk=(1, 5))
-                losses.update(acc1[0], samples.shape[0])
+                losses.update(loss.item(), samples.shape[0])
                 top1.update(acc1[0], samples.shape[0])
                 top5.update(acc5[0], samples.shape[0])
 
@@ -295,7 +292,6 @@ class Trainer:
         model: nn.Module,
         criterion: nn.Module,
         dataloader_val: Iterable,
-        class_names: List,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """A single forward pass to evaluate the val set after training an epoch
 
@@ -315,8 +311,7 @@ class Trainer:
         loss, top1 = evaluate(
             model,
             dataloader_val,
-            class_names,
-            output_path=self.output_dir,
+            criterion,
             device=self.device,
         )
 
@@ -342,29 +337,4 @@ class Trainer:
         torch.save(
             save_dict,
             save_path,
-        )
-
-    def _visualize_batch(
-        self, dataloader: data.DataLoader, split: str, class_names: List[str]
-    ):
-        """Visualize a batch of images after data augmentation; sthis helps manually verify
-        the data augmentations are working as intended on the images and boxes
-
-        Args:
-            dataloader: Train or val dataloader
-            split: "train" or "val"
-            class_names: List of class names in the ontology
-        """
-        valid_splits = {"train", "val"}
-        if split not in valid_splits:
-            raise ValueError("split must either be in valid_splits")
-
-        dataiter = iter(dataloader)
-        samples, targets, annotations = next(dataiter)
-        visualize_norm_img_tensors(
-            samples,
-            targets,
-            annotations,
-            class_names,
-            self.output_dir / "aug" / f"{split}-images",
         )
