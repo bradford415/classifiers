@@ -10,7 +10,7 @@ from fire import Fire
 from torch import nn
 from torch.utils.data import DataLoader
 
-from classifiers.data.imagenet import build_imagenet
+from classifiers.dataset.imagenet import build_imagenet
 from classifiers.evaluate import topk_accuracy
 from classifiers.models import darknet53, vit_base
 from classifiers.trainer import Trainer
