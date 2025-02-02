@@ -287,6 +287,7 @@ class ViT(nn.Module):
         )
 
         # TODO: figure out if I need an nn.identity; for now leaving it out
+        self.to_latent = nn.Identity()
 
         self.mlp_head = nn.Linear(patch_emb_dim, num_classes)
         self.pool = pool
@@ -321,7 +322,7 @@ class ViT(nn.Module):
         x = self.to_patch_embedding(x)
 
         # Copy the classification token along the batch (b, 1, input_dim)
-        # and prepend it to the patches for each batch (b, num_p + 1, patch_dim)
+        # and prepend it to the patches for each sample in the batch (b, num_p + 1, patch_dim)
         cls_tokens = self.cls_token.repeat(b, 1, 1)
         x = torch.cat((cls_tokens, x), dim=1)
 
@@ -336,7 +337,7 @@ class ViT(nn.Module):
         # Extract the extra cls token or use global average pooling to make the final
         # class prediction; I believe the class token is used most often
         x = x.mean(dim=1) if self.pool == "mean" else x[:, 0]
-
+        
         # Classification prediction
         x = self.mlp_head(x)
 

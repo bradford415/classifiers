@@ -49,7 +49,7 @@ def plot_acc1(val_acc1: list[float], save_dir: str):
 
     plt.title("validation top 1 acc per epoch")
     ax.set_xlabel("epoch")
-    ax.set_ylabel("mAP")
+    ax.set_ylabel("top 1 acc")
 
     fig.savefig(save_name, bbox_inches="tight")
     plt.close()

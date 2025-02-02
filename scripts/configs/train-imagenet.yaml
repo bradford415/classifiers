@@ -38,7 +38,7 @@ train:
   epochs: 200
 
   # Number of epochs to checkpoint after; use 'null' to turn off checkpointing
-  ckpt_epochs: 20
+  ckpt_epochs: 60
 
   # Path of weights file (.pt) to resume training; 
   # use `null` to train a new model from scratch

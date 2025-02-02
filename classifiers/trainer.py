@@ -38,7 +38,11 @@ class Trainer:
         self.log_train_steps = log_train_steps
 
         # mixed precision training not yet supported on mps
-        self.enable_amp = True if not self.device.type == "mps" else False
+        #self.enable_amp = True if not self.device.type == "mps" else False
+
+        # NOTE: for the ViT model, mixed precision training created only NaNs, disabling for now;
+        #       seems to be a long standing bug: https://github.com/pytorch/pytorch/issues/40497
+        self.enable_amp = False
 
     def train(
         self,
@@ -121,7 +125,7 @@ class Trainer:
             )
             val_loss.append(val_loss_meter.avg)
 
-            acc1 = acc1_meter.avg
+            acc1 = acc1_meter.avg.item()
             epoch_acc1.append(acc1)
 
             if acc1 > best_acc:
@@ -146,7 +150,8 @@ class Trainer:
                 last_best_path = best_path
 
             plot_loss(train_loss, val_loss, save_dir=str(self.output_dir))
-            plot_acc1(acc1, save_dir=str(self.output_dir))
+            plot_acc1(epoch_acc1, save_dir=str(self.output_dir))
+            # TODO: plot lr
 
             # Create csv file of training stats per epoch
             train_dict = {
@@ -242,7 +247,7 @@ class Trainer:
             ):
                 # (b, num_classes)
                 preds = model(samples)
-
+                
                 loss = criterion(preds, targets)
 
                 acc1, acc5 = topk_accuracy(preds, targets, topk=(1, 5))
@@ -251,6 +256,7 @@ class Trainer:
                 top5.update(acc5[0], samples.shape[0])
 
             # Calculate gradients and updates weights
+            #breakpoint()
             if self.enable_amp:
                 scaler.scale(loss).backward()
             else:
@@ -259,8 +265,8 @@ class Trainer:
             optimizer.step()
             optimizer.zero_grad()
 
-            epoch_loss.append(loss.detach().cpu())
-            # TODO: not sure if this is on the computation graph or if I have to detach it (probably not)
+            epoch_loss.append(loss.item())
+
             curr_lr = optimizer.state_dict()["param_groups"][0]["lr"]
 
             epoch_lr.append(curr_lr)
@@ -274,8 +280,11 @@ class Trainer:
                     "Current learning_rate: %s\n",
                     curr_lr,
                 )
+                
 
             if (steps) % self.log_train_steps == 0:
+                #breakpoint()
+                
                 log.info(
                     "epoch: %-10d iter: %d/%-10d train loss: %-10.4f",
                     epoch,
