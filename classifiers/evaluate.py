@@ -113,7 +113,8 @@ class AverageMeter(object):
 
 
 def topk_accuracy(output, target, topk: Iterable = (1,)):
-    """Computes the accuracy over the k top predictions for the specified values of k
+    """Computes the accuracy over the k top predictions for the specified values of k;
+    multplies by 100 to get the percentage
 
     Args:
         TODO

@@ -12,7 +12,7 @@ from torch.utils import data
 
 from classifiers.evaluate import (AverageMeter, evaluate,
                                   load_model_checkpoint, topk_accuracy)
-from classifiers.visualize import plot_acc1, plot_loss
+from classifiers.visualize import plot_acc1, plot_loss, plot_lr
 
 log = logging.getLogger(__name__)
 
@@ -38,11 +38,14 @@ class Trainer:
         self.log_train_steps = log_train_steps
 
         # mixed precision training not yet supported on mps
-        #self.enable_amp = True if not self.device.type == "mps" else False
+        self.enable_amp = True if not self.device.type == "mps" else False
+
+        # Metrics
+        self.learning_rate = []
 
         # NOTE: for the ViT model, mixed precision training created only NaNs, disabling for now;
         #       seems to be a long standing bug: https://github.com/pytorch/pytorch/issues/40497
-        self.enable_amp = False
+        # self.enable_amp = False
 
     def train(
         self,
@@ -52,6 +55,8 @@ class Trainer:
         dataloader_val: data.DataLoader,
         optimizer: torch.optim.Optimizer,
         scheduler: torch.optim.lr_scheduler,
+        grad_accum_steps: int = 1,
+        max_norm: float = 1.0,
         start_epoch: int = 1,
         epochs: int = 100,
         ckpt_epochs: int = 10,
@@ -69,6 +74,8 @@ class Trainer:
             dataloader_val: torch dataloader to loop through the val dataset
             optimizer: optimizer which determines how to update the weights
             scheduler: scheduler which determines how to change the learning rate
+            grad_accum_steps: TODO
+            max_norm: TODO
             start_epoch: epoch to start the training on; starting at 1 is a good default because it makes
                          checkpointing and calculations more intuitive
             epochs: the epoch to end training on; unless starting from a check point, this will be the number of epochs to train for
@@ -109,11 +116,18 @@ class Trainer:
             one_epoch_start_time = time.time()
 
             # Train one epoch
-            train_loss_meter, epoch_lr = self._train_one_epoch(
-                model, criterion, dataloader_train, optimizer, scheduler, epoch, scaler
+            train_loss_meter = self._train_one_epoch(
+                model,
+                criterion,
+                dataloader_train,
+                optimizer,
+                scheduler,
+                epoch,
+                grad_accum_steps,
+                max_norm,
+                scaler,
             )
 
-            lr_vals += epoch_lr
             train_loss.append(train_loss_meter.avg)
 
             # Evaluate the model on the validation set
@@ -131,7 +145,7 @@ class Trainer:
             if acc1 > best_acc:
                 best_acc = acc1
 
-                acc_str = f"{acc1*100:.2f}".replace(".", "-")
+                acc_str = f"{acc1:.2f}".replace(".", "-")
                 best_path = self.output_dir / "checkpoints" / f"best_acc1_{acc_str}.pt"
                 best_path.parents[0].mkdir(parents=True, exist_ok=True)
 
@@ -151,7 +165,6 @@ class Trainer:
 
             plot_loss(train_loss, val_loss, save_dir=str(self.output_dir))
             plot_acc1(epoch_acc1, save_dir=str(self.output_dir))
-            # TODO: plot lr
 
             # Create csv file of training stats per epoch
             train_dict = {
@@ -160,7 +173,7 @@ class Trainer:
                 "val_loss": val_loss,
                 "acc1": epoch_acc1,
             }
-            pd.DataFrame(train_dict).to_csv(
+            pd.DataFrame(train_dict).round(5).to_csv(
                 self.output_dir / "train_stats.csv", index=False
             )
 
@@ -176,8 +189,8 @@ class Trainer:
             if round(acc1, 4) > round(best_acc, 4):
                 best_acc = acc1
 
-                mAP_str = f"{acc1*100:.2f}".replace(".", "-")
-                best_path = self.output_dir / "checkpoints" / f"best_acc_{mAP_str}.pt"
+                acc1_str = f"{acc1*100:.2f}".replace(".", "-")
+                best_path = self.output_dir / "checkpoints" / f"best_acc_{acc1_str}.pt"
                 best_path.parents[0].mkdir(parents=True, exist_ok=True)
 
                 log.info(
@@ -216,6 +229,8 @@ class Trainer:
         optimizer: torch.optim.Optimizer,
         scheduler: torch.optim.lr_scheduler,
         epoch: int,
+        grad_accum_steps: int,
+        max_norm: float,
         scaler: torch.amp,
     ):
         """Train one epoch
@@ -247,53 +262,74 @@ class Trainer:
             ):
                 # (b, num_classes)
                 preds = model(samples)
-                
+
                 loss = criterion(preds, targets)
 
                 acc1, acc5 = topk_accuracy(preds, targets, topk=(1, 5))
-                losses.update(loss.item(), samples.shape[0])
+                losses.update(
+                    loss.item(), samples.shape[0]
+                )  # TODO: Need to check if this is accurate now that I added gradient accumulation; I think it is
                 top1.update(acc1[0], samples.shape[0])
                 top5.update(acc5[0], samples.shape[0])
 
-            # Calculate gradients and updates weights
-            #breakpoint()
+            # https://github.com/jeonsworld/ViT-pytorch/blob/460a162767de1722a014ed2261463dbbc01196b6/train.py#L198
+            if grad_accum_steps > 1:
+                # Scale the loss by the number of accumulation steps to average the gradients
+                loss = loss / grad_accum_steps
+
+            # Calculate and accumulate gradients
             if self.enable_amp:
                 scaler.scale(loss).backward()
             else:
                 loss.backward()
 
-            optimizer.step()
-            optimizer.zero_grad()
+            if steps % grad_accum_steps == 0:
+                if self.enable_amp:
+                    # Unscales the gradients of optimizer's assigned params in-place and clip as usual
+                    scaler.unscale_(optimizer)
+                    nn.utils.clip_grad_norm_(model.parameters(), max_norm)
+
+                    scaler.step(optimizer)
+                    scaler.update()
+                else:
+                    nn.utils.clip_grad_norm_(model.parameters(), max_norm)
+                    optimizer.step()
+                optimizer.zero_grad()
+
+                # Increment lr scheduler every effective batch_size (grad_accum_steps)
+                if scheduler is not None:
+                    scheduler.step()
+
+                # I think having this in the grad_accum_steps if block is correct since the lr is only used during
+                # optimizer step
+                curr_lr = round(optimizer.state_dict()["param_groups"][0]["lr"], 6)
+                self.learning_rate.append(curr_lr)
 
             epoch_loss.append(loss.item())
 
-            curr_lr = optimizer.state_dict()["param_groups"][0]["lr"]
-
-            epoch_lr.append(curr_lr)
-
-            # Increment lr scheduler every batch
-            if scheduler is not None:
-                scheduler.step()
+            if (steps) % 10 == 0:
+                # Update the learning rate plot after n steps
+                plot_lr(self.learning_rate, save_dir=str(self.output_dir))
 
             if (steps) % 100 == 0:
+
                 log.info(
                     "Current learning_rate: %s\n",
                     curr_lr,
                 )
-                
 
             if (steps) % self.log_train_steps == 0:
-                #breakpoint()
-                
+                # breakpoint()
+
                 log.info(
                     "epoch: %-10d iter: %d/%-10d train loss: %-10.4f",
                     epoch,
                     steps,
                     len(dataloader_train),
-                    loss.item(),
+                    loss.item() * grad_accum_steps,
                 )
 
-        return losses, epoch_lr
+        return losses
 
     @torch.no_grad()
     def _evaluate(
@@ -315,8 +351,7 @@ class Trainer:
             A Tuple of the (prec, rec, ap, f1, and class) per class
         """
 
-        # evaluate() is used by both val and test set; this can be customized in the future if needed
-        # but for now validation and test behave the same
+        # NOTE: evaluate 
         loss, top1 = evaluate(
             model,
             dataloader_val,

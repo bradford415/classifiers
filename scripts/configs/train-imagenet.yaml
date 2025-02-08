@@ -3,7 +3,7 @@
 
 # Whether to run in development/debugging mode; this only uses a few samples in in the train/val dataset
 # to quickly run the code as well as sets num_workers=0
-dev_mode: True
+dev_mode: False
 
 # Base directory for output files; do not change this 
 output_dir: "output/train"
@@ -15,7 +15,7 @@ exp_name: "development"
 dataset_name: "ImageNet"
 
 # Log the train progress every n steps
-log_train_steps: 20
+log_train_steps: 60
 
 # Parameters for the dataset class
 dataset:
@@ -31,21 +31,26 @@ train:
   # Configurations for learning parameters such as the optmizier and lr scheduler
   learning_config: "vit_learning_config"
 
-  batch_size: 32
+  batch_size: 128
+
+  # Gradient accumulation batch size; ViT paper uses a batch size of 512 but most GPUs can't 
+  # handle that so we'll accumulate gradients for grad_accum_bs/batch_size steps before updating the weights; 
+  # therefore batch_size must be divisible by grad_accum_bs
+  grad_accum_bs: 512
 
   # The epoch to start on; starting at 1 makes calculations for logging and checkpointing more intuitive
   start_epoch: 1
-  epochs: 200
+  epochs: 300
 
   # Number of epochs to checkpoint after; use 'null' to turn off checkpointing
-  ckpt_epochs: 60
+  ckpt_epochs: 5
 
   # Path of weights file (.pt) to resume training; 
   # use `null` to train a new model from scratch
   checkpoint_path:
 
 validation:
-  batch_size: 4
+  batch_size: 64
 
 # GPU parameters
 cuda:
@@ -60,18 +65,19 @@ reproducibility:
 
 # Params for training objects
 
-
-# ViT learning config described in the paper
+# TODO: Should probably make these configs in code some how; basically find optimal values and hard code them
+# ViT learning config described in the paper; Table 3
 vit_learning_config:
-  optimizer: "adam"
+  optimizer: "sgd"
 
-  learning_rate: 0.0001 #1e-4
+  learning_rate: 0.003
 
   # L2 regulartization penalty to add to the loss function
-  weight_decay: 0.1
+  weight_decay: 0.0
 
-  betas: [0.9, 0.999]
-  
-  lr_scheduler: "cosine_annealing"
+  # Max norm for gradient clipping
+  max_norm: 1.0
+
+  lr_scheduler: "warmup_cosine_decay"
   lr_params:
 

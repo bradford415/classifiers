@@ -337,7 +337,7 @@ class ViT(nn.Module):
         # Extract the extra cls token or use global average pooling to make the final
         # class prediction; I believe the class token is used most often
         x = x.mean(dim=1) if self.pool == "mean" else x[:, 0]
-        
+
         # Classification prediction
         x = self.mlp_head(x)
 

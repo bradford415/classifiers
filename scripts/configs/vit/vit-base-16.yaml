@@ -11,7 +11,7 @@ vit_base:
   # classification method to use and pass into the final MLP; 'cls' = extra token only, 'mean' = globally average the patches and the token
   pool: "cls"
 
-  patch_size: 32 # TODO: Verify this default patch size
+  patch_size: 16 # TODO: Verify this default patch size
 
   # dim to project the patches to; this is the input_dim for the transformer; I believe ViT paper uses the
   # the same patch emb dim for the Transformer emb dim but need to check

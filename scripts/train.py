@@ -30,6 +30,7 @@ scheduler_map = {
     "step_lr": torch.optim.lr_scheduler.StepLR,
     "lambda_lr": torch.optim.lr_scheduler.LambdaLR,
     "cosine_annealing": schedulers.make_cosine_anneal,  # quickly decays lr then spikes back up for a "warm restart" https://paperswithcode.com/method/cosine-annealing
+    "warmup_cosine_decay": schedulers.warmup_cosine_decay,  # linearly increases lr then decays it with a cosine function
 }
 
 # Initialize the root logger
@@ -91,6 +92,13 @@ def main(base_config_path: str, model_config_path: str):
         "shuffle": False,
         "num_workers": base_config["dataset"]["num_workers"] if not dev_mode else 0,
     }
+
+    if base_config["train"]["grad_accum_bs"] % base_config["train"]["batch_size"] == 0:
+        grad_accum_steps = (
+            base_config["train"]["grad_accum_bs"] // base_config["train"]["batch_size"]
+        )
+    else:
+        raise ValueError("grad_accum_bs must be divisible by batch_size")
 
     # Set device specific characteristics
     use_cpu = False
@@ -165,12 +173,21 @@ def main(base_config_path: str, model_config_path: str):
     learning_params = base_config[learning_config]
 
     # Initialize training objects
-    optimizer, lr_scheduler = _init_training_objects(
+    optimizer = _init_training_objects(
         model_params=model.parameters(),
         optimizer=learning_params["optimizer"],
-        scheduler=learning_params["lr_scheduler"],
         learning_rate=learning_params["learning_rate"],
         weight_decay=learning_params["weight_decay"],
+    )
+
+    total_steps = (len(dataloader_train) * train_args["epochs"]) // grad_accum_steps
+    log.info(
+        "total effective steps (steps * epochs // grad_accum_steps): %d", total_steps
+    )
+
+    # TODO: should probably put this in a config; also, total_steps needs to be calculated based on desired epochs
+    lr_scheduler = scheduler_map[learning_params["lr_scheduler"]](
+        optimizer, warmup_steps=10000, total_steps=total_steps
     )
 
     trainer = Trainer(
@@ -194,6 +211,8 @@ def main(base_config_path: str, model_config_path: str):
         "dataloader_val": dataloader_val,
         "optimizer": optimizer,
         "scheduler": lr_scheduler,
+        "grad_accum_steps": grad_accum_steps,
+        "max_norm": learning_params["max_norm"],
         "start_epoch": train_args["start_epoch"],
         "epochs": train_args["epochs"],
         "ckpt_epochs": train_args["ckpt_epochs"],
@@ -205,17 +224,20 @@ def main(base_config_path: str, model_config_path: str):
 def _init_training_objects(
     model_params: Iterable,
     optimizer: str = "sgd",
-    scheduler: str = "step_lr",
     learning_rate: float = 1e-4,
     weight_decay: float = 1e-4,
     betas: Iterable[float, float] = (0.9, 0.999),
 ):
-    optimizer = optimizer_map[optimizer](
-        model_params, lr=learning_rate, weight_decay=weight_decay, betas=betas
-    )
-    lr_scheduler = scheduler_map[scheduler](optimizer)
+    if optimizer == "adam":
+        optimizer = optimizer_map[optimizer](
+            model_params, lr=learning_rate, weight_decay=weight_decay, betas=betas
+        )
+    elif optimizer == "sgd":
+        optimizer = optimizer_map[optimizer](
+            model_params, lr=learning_rate, weight_decay=weight_decay
+        )
 
-    return optimizer, lr_scheduler
+    return optimizer
 
 
 if __name__ == "__main__":

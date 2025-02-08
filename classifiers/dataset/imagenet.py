@@ -26,7 +26,7 @@ class ImageNet(datasets.ImageFolder):
             split: the dataset split type; train, val, or test
             dev_mode: TODO
         """
-        super().__init__(root = image_folder, transform = transforms)
+        super().__init__(root=image_folder, transform=transforms)
 
         self.num_classes = 1000
 
@@ -54,7 +54,9 @@ def make_imagenet_transforms(dataset_split):
     if dataset_split == "train":
         return T.Compose(
             [
-                T.RandomResizedCrop(224), # 224 is commonly used to pretrain classifiers
+                T.RandomResizedCrop(
+                    224
+                ),  # 224 is commonly used to pretrain classifiers
                 T.RandomHorizontalFlip(p=0.5),
                 normalize,
             ]
