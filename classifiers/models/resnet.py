@@ -281,9 +281,12 @@ class ResNet(nn.Module):
 
         if not self.remove_top:
             out = self.avgpool(out)
-            out = torch.flatten(x, 1)
+            out = torch.flatten(out, 1)
             out = self.fc(out)
 
+            return out
+
+        # Returns multiscale feature maps if using as a feature extractor
         # return block1, block2, block3, out
         return out, block3, block2
 
@@ -307,10 +310,11 @@ def _resnet(
     layers: List[int],
     pretrain: bool = True,
     remove_top: bool = True,
+    num_classes: int = 1000,
     progress: bool = True,
     **kwargs: Any,
 ) -> ResNet:
-    model = ResNet(block, layers, remove_top=remove_top, **kwargs)
+    model = ResNet(block, layers, remove_top=remove_top, num_classes=1000, **kwargs)
 
     if pretrain:
         state_dict = torch.hub.load_state_dict_from_url(
@@ -354,11 +358,10 @@ def resnet18(
 
 
 def resnet50(
-    pretrain=False, remove_top=False, progress: bool = True, **kwargs: Any
+    pretrain: bool = False, remove_top: bool = False, num_classes: int = 1000, progress: bool = True, **kwargs: Any
 ) -> ResNet:
     """ResNet-50 from `Deep Residual Learning for Image Recognition <https://arxiv.org/abs/1512.03385>`__."""
 
     return _resnet(
-        "resnet50", Bottleneck, [3, 4, 6, 3], pretrain, remove_top, progress, **kwargs
+        "resnet50", Bottleneck, [3, 4, 6, 3], pretrain, remove_top, num_classes, progress, **kwargs
     )
-

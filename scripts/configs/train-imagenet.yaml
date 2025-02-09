@@ -82,4 +82,3 @@ vit_learning_config:
 
   lr_scheduler: "warmup_cosine_decay"
   lr_params:
-

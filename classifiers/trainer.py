@@ -311,22 +311,24 @@ class Trainer:
                 # Update the learning rate plot after n steps
                 plot_lr(self.learning_rate, save_dir=str(self.output_dir))
 
-            if (steps) % 100 == 0:
+            # TODO: remove this if block if the rest looks okay
+            # if (steps) % 100 == 0:
 
-                log.info(
-                    "Current learning_rate: %s\n",
-                    curr_lr,
-                )
+            #     log.info(
+            #         "Current learning_rate: %s\n",
+            #         curr_lr,
+            #     )
 
             if (steps) % self.log_train_steps == 0:
                 # breakpoint()
 
                 log.info(
-                    "epoch: %-10d iter: %d/%-10d train loss: %-10.4f",
+                    "epoch: %-10d iter: %d/%-10d train loss: %-10.4f last lr: %-10.6f",
                     epoch,
                     steps,
                     len(dataloader_train),
                     loss.item() * grad_accum_steps,
+                    self.learning_rate[-1] if self.learning_rate else 0,
                 )
 
         return losses

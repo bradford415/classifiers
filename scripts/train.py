@@ -17,7 +17,7 @@ from classifiers.trainer import Trainer
 from classifiers.utils import reproduce, schedulers
 
 classifier_map: Dict[str, Any] = {"vit_base": vit_base,
-                                  "resnet50:": resnet50,}
+                                  "resnet50": resnet50,}
 
 dataset_map: Dict[str, Any] = {"ImageNet": build_imagenet}
 
@@ -149,6 +149,11 @@ def main(base_config_path: str, model_config_path: str):
     if "vit" in classifier_name:
         classifier_params = {
             "image_size": 224,
+            "num_classes": dataset_train.num_classes,
+            **model_config[classifier_name],
+        }
+    elif "resnet" in classifier_name:
+        classifier_params = {
             "num_classes": dataset_train.num_classes,
             **model_config[classifier_name],
         }
