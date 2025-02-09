@@ -12,11 +12,12 @@ from torch.utils.data import DataLoader
 
 from classifiers.dataset.imagenet import build_imagenet
 from classifiers.evaluate import topk_accuracy
-from classifiers.models import darknet53, vit_base
+from classifiers.models import darknet53, resnet50, vit_base
 from classifiers.trainer import Trainer
 from classifiers.utils import reproduce, schedulers
 
-classifier_map: Dict[str, Any] = {"vit_base": vit_base}
+classifier_map: Dict[str, Any] = {"vit_base": vit_base,
+                                  "resnet50:": resnet50,}
 
 dataset_map: Dict[str, Any] = {"ImageNet": build_imagenet}
 
