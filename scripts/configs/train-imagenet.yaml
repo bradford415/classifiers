@@ -78,6 +78,8 @@ vit_learning_config:
   # Max norm for gradient clipping
   max_norm: 1.0
 
+  momentum: 0.9
+
   lr_scheduler: "warmup_cosine_decay"
   lr_params:
 
