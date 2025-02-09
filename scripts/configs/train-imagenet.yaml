@@ -31,7 +31,7 @@ train:
   # Configurations for learning parameters such as the optmizier and lr scheduler
   learning_config: "vit_learning_config"
 
-  batch_size: 128
+  batch_size: 64
 
   # Gradient accumulation batch size; ViT paper uses a batch size of 512 but most GPUs can't 
   # handle that so we'll accumulate gradients for grad_accum_bs/batch_size steps before updating the weights; 
