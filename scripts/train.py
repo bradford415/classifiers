@@ -13,26 +13,17 @@ from torch.utils.data import DataLoader
 from classifiers.dataset.imagenet import build_imagenet
 from classifiers.evaluate import topk_accuracy
 from classifiers.models import darknet53, resnet50, vit_base
+from classifiers.solver import solver_configs
+from classifiers.solver.build import build_solvers
 from classifiers.trainer import Trainer
-from classifiers.utils import reproduce, schedulers
+from classifiers.utils import reproduce
 
-classifier_map: Dict[str, Any] = {"vit_base": vit_base,
-                                  "resnet50": resnet50,}
+classifier_map: Dict[str, Any] = {
+    "vit_base": vit_base,
+    "resnet50": resnet50,
+}
 
 dataset_map: Dict[str, Any] = {"ImageNet": build_imagenet}
-
-optimizer_map = {
-    "adam": torch.optim.Adam,
-    "adamw": torch.optim.AdamW,
-    "sgd": torch.optim.SGD,
-}
-
-scheduler_map = {
-    "step_lr": torch.optim.lr_scheduler.StepLR,
-    "lambda_lr": torch.optim.lr_scheduler.LambdaLR,
-    "cosine_annealing": schedulers.make_cosine_anneal,  # quickly decays lr then spikes back up for a "warm restart" https://paperswithcode.com/method/cosine-annealing
-    "warmup_cosine_decay": schedulers.warmup_cosine_decay,  # linearly increases lr then decays it with a cosine function
-}
 
 # Initialize the root logger
 log = logging.getLogger(__name__)
@@ -81,6 +72,11 @@ def main(base_config_path: str, model_config_path: str):
 
     # Apply reproducibility seeds
     reproduce.reproducibility(**base_config["reproducibility"])
+
+    # Extract solver config
+    solver_config = solver_configs[base_config["solver"]]()
+
+    # breakpoint()
 
     # Set gpu parameters
     train_kwargs = {
@@ -178,6 +174,12 @@ def main(base_config_path: str, model_config_path: str):
     learning_config = train_args["learning_config"]
     learning_params = base_config[learning_config]
 
+    build_solvers(
+        model.parameters(), solver_config.optimizer, solver_config.lr_scheduler
+    )
+
+    breakpoint()
+
     # Initialize training objects
     optimizer = _init_training_objects(
         model_params=model.parameters(),
@@ -192,9 +194,10 @@ def main(base_config_path: str, model_config_path: str):
     )
 
     # TODO: should probably put this in a config; also, total_steps needs to be calculated based on desired epochs
-    lr_scheduler = scheduler_map[learning_params["lr_scheduler"]](
-        optimizer, warmup_steps=10000, total_steps=total_steps
-    )
+    lr_scheduler = build_lr_scheduler()
+    # lr_scheduler = scheduler_map[learning_params["lr_scheduler"]](
+    #     optimizer, warmup_steps=10000, total_steps=total_steps
+    # )
 
     trainer = Trainer(
         output_dir=str(output_path),
@@ -225,25 +228,6 @@ def main(base_config_path: str, model_config_path: str):
         "checkpoint_path": train_args["checkpoint_path"],
     }
     trainer.train(**trainer_args)
-
-
-def _init_training_objects(
-    model_params: Iterable,
-    optimizer: str = "sgd",
-    learning_rate: float = 1e-4,
-    weight_decay: float = 1e-4,
-    betas: Iterable[float, float] = (0.9, 0.999),
-):
-    if optimizer == "adam":
-        optimizer = optimizer_map[optimizer](
-            model_params, lr=learning_rate, weight_decay=weight_decay, betas=betas
-        )
-    elif optimizer == "sgd":
-        optimizer = optimizer_map[optimizer](
-            model_params, lr=learning_rate, weight_decay=weight_decay
-        )
-
-    return optimizer
 
 
 if __name__ == "__main__":

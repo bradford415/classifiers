@@ -1,12 +1,12 @@
 import ml_collections
 
-import ml_collections
+__all__ = ["resnet50_imagenet_config"]
 
 
 def get_testing():
     """Returns a minimal configuration for testing."""
     config = ml_collections.ConfigDict()
-    config.patches = ml_collections.ConfigDict({'size': (16, 16)})
+    config.patches = ml_collections.ConfigDict({"size": (16, 16)})
     config.hidden_size = 1
     config.transformer = ml_collections.ConfigDict()
     config.transformer.mlp_dim = 1
@@ -14,7 +14,7 @@ def get_testing():
     config.transformer.num_layers = 1
     config.transformer.attention_dropout_rate = 0.0
     config.transformer.dropout_rate = 0.1
-    config.classifier = 'token'
+    config.classifier = "token"
     config.representation_size = None
     return config
 
@@ -22,7 +22,7 @@ def get_testing():
 def vit_b16_config():
     """Returns the ViT-B/16 configuration."""
     config = ml_collections.ConfigDict()
-    config.patches = ml_collections.ConfigDict({'size': (16, 16)})
+    config.patches = ml_collections.ConfigDict({"size": (16, 16)})
     config.hidden_size = 768
     config.transformer = ml_collections.ConfigDict()
     config.transformer.mlp_dim = 3072
@@ -30,20 +30,41 @@ def vit_b16_config():
     config.transformer.num_layers = 12
     config.transformer.attention_dropout_rate = 0.0
     config.transformer.dropout_rate = 0.1
-    config.classifier = 'token'
+    config.classifier = "token"
     config.representation_size = None
     return config
 
 
-def resnet50_config():
-    """Returns the solver parameters used for Resnet50"""
+def resnet50_imagenet_config():
+    """Returns the solver parameters used for Resnet50 on the ImageNet dataset
+
+    Parameters defined in the ResNet paper https://arxiv.org/abs/1512.03385 section 3.4
+    """
     config = ml_collections.ConfigDict()
-    config.
-    return 
 
+    # General params
+    config.batch_size = 256
+    config.num_epochs = 90
 
-def get_l32_config():
-    """Returns the ViT-L/32 configuration."""
-    config = get_l16_config()
-    config.patches.size = (32, 32)
+    # Optimizer params
+    config.optimizer = ml_collections.ConfigDict()
+    config.optimizer.name = "sgd"
+    config.optimizer.lr = 0.1
+    config.optimizer.weight_decay = 1e-4  # 0.0001
+    config.optimizer.momentum = 0.9
+
+    # Scheduler params
+    config.lr_scheduler = ml_collections.ConfigDict()
+    config.lr_scheduler.name = "reduce_lr_on_plateau"
+    config.lr_scheduler.mode = "min"  # reduces on error plateau (1 - accuracy)
+    config.lr_scheduler.factor = 0.1
+    config.lr_scheduler.patience = 10  # epochs of no improvement
+
     return config
+
+
+# def get_l32_config():
+#     """Returns the ViT-L/32 configuration."""
+#     config = get_l16_config()
+#     config.patches.size = (32, 32)
+#     return config

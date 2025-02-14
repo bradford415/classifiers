@@ -64,6 +64,7 @@ reproducibility:
 
 
 # Params for training objects
+solver: "resnet50_imagenet"
 
 # TODO: Should probably make these configs in code some how; basically find optimal values and hard code them
 # ViT learning config described in the paper; Table 3

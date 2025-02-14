@@ -358,10 +358,21 @@ def resnet18(
 
 
 def resnet50(
-    pretrain: bool = False, remove_top: bool = False, num_classes: int = 1000, progress: bool = True, **kwargs: Any
+    pretrain: bool = False,
+    remove_top: bool = False,
+    num_classes: int = 1000,
+    progress: bool = True,
+    **kwargs: Any,
 ) -> ResNet:
     """ResNet-50 from `Deep Residual Learning for Image Recognition <https://arxiv.org/abs/1512.03385>`__."""
 
     return _resnet(
-        "resnet50", Bottleneck, [3, 4, 6, 3], pretrain, remove_top, num_classes, progress, **kwargs
+        "resnet50",
+        Bottleneck,
+        [3, 4, 6, 3],
+        pretrain,
+        remove_top,
+        num_classes,
+        progress,
+        **kwargs,
     )

@@ -71,3 +71,42 @@ def make_cosine_anneal(optimizer: torch.optim.Optimizer):
     return torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
         optimizer=optimizer, T_0=max_steps
     )
+
+
+def reduce_lr_on_plateau(
+    optimizer: torch.optim.Optimizer,
+    factor: float,
+    patience: int = 10,
+    threshold: float = 1e-4,
+):
+    """Builds the reduce lr on plateau lr scheduler"""
+    return torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer=optimizer, factor=factor, patience=patience, threshold=threshold
+    )
+
+
+def build_lr_scheduler(
+    scheduler_name: str,
+    optimizer: torch.optim.Optimizer,
+    scheduler_params: dict[str, any],
+):
+    """Builds the learning rate scheduler based on the provided parameters
+
+    Args:
+        scheduler_name: the name of the learning rate scheduler to build
+        scheduler_params: the parameters used to build the learning rate scheduler
+        optimizer: the optimizer used during training
+    """
+    if scheduler_name == "warmup_cosine_decay":  # TODO: put this in config
+        raise NotImplementedError
+        # return warmup_cosine_decay(
+        #     optimizer,
+        #     warmup_steps=scheduler_params["warmup_steps"],
+        #     total_steps=scheduler_params["total_steps"],
+        # )
+    elif scheduler_name == "cosine_anneal":
+        raise NotImplementedError
+    elif scheduler_name == "reduce_lr_on_plateau":
+        return reduce_lr_on_plateau(optimizer, **scheduler_params)
+    else:
+        raise ValueError(f"Unknown lr_scheduler: {scheduler_name }")

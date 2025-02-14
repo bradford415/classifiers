@@ -353,7 +353,7 @@ class Trainer:
             A Tuple of the (prec, rec, ap, f1, and class) per class
         """
 
-        # NOTE: evaluate 
+        # NOTE: evaluate
         loss, top1 = evaluate(
             model,
             dataloader_val,
