@@ -12,7 +12,7 @@ scheduler_map = {
     "lambda_lr": torch.optim.lr_scheduler.LambdaLR,
     "cosine_annealing": make_cosine_anneal,  # quickly decays lr then spikes back up for a "warm restart" https://paperswithcode.com/method/cosine-annealing
     "warmup_cosine_decay": warmup_cosine_decay,  # linearly increases lr then decays it with a cosine function
+    "reduce_lr_on_plateau": reduce_lr_on_plateau,
 }
-
 
 solver_configs = {"resnet50_imagenet": resnet50_imagenet_config}

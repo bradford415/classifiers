@@ -35,15 +35,16 @@ def vit_b16_config():
     return config
 
 
-def resnet50_imagenet_config():
+def resnet50_imagenet_config(): 
     """Returns the solver parameters used for Resnet50 on the ImageNet dataset
 
     Parameters defined in the ResNet paper https://arxiv.org/abs/1512.03385 section 3.4
     """
     config = ml_collections.ConfigDict()
 
-    # General params
-    config.batch_size = 256
+    # TODO: decide if I want this in the config.py or yaml General params
+    config.train_batch_size = 512
+    config.val_batch_size = 128
     config.num_epochs = 90
 
     # Optimizer params
@@ -54,6 +55,7 @@ def resnet50_imagenet_config():
     config.optimizer.momentum = 0.9
 
     # Scheduler params
+    config.step_lr_on = "epochs" # step the lr after n "epochs" or "steps" 
     config.lr_scheduler = ml_collections.ConfigDict()
     config.lr_scheduler.name = "reduce_lr_on_plateau"
     config.lr_scheduler.mode = "min"  # reduces on error plateau (1 - accuracy)

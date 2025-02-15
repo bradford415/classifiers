@@ -76,8 +76,6 @@ def main(base_config_path: str, model_config_path: str):
     # Extract solver config
     solver_config = solver_configs[base_config["solver"]]()
 
-    # breakpoint()
-
     # Set gpu parameters
     train_kwargs = {
         "batch_size": base_config["train"]["batch_size"],
@@ -174,18 +172,8 @@ def main(base_config_path: str, model_config_path: str):
     learning_config = train_args["learning_config"]
     learning_params = base_config[learning_config]
 
-    build_solvers(
+    optimizer, lr_scheduler = build_solvers(
         model.parameters(), solver_config.optimizer, solver_config.lr_scheduler
-    )
-
-    breakpoint()
-
-    # Initialize training objects
-    optimizer = _init_training_objects(
-        model_params=model.parameters(),
-        optimizer=learning_params["optimizer"],
-        learning_rate=learning_params["learning_rate"],
-        weight_decay=learning_params["weight_decay"],
     )
 
     total_steps = (len(dataloader_train) * train_args["epochs"]) // grad_accum_steps
@@ -194,13 +182,13 @@ def main(base_config_path: str, model_config_path: str):
     )
 
     # TODO: should probably put this in a config; also, total_steps needs to be calculated based on desired epochs
-    lr_scheduler = build_lr_scheduler()
     # lr_scheduler = scheduler_map[learning_params["lr_scheduler"]](
     #     optimizer, warmup_steps=10000, total_steps=total_steps
     # )
 
     trainer = Trainer(
         output_dir=str(output_path),
+        step_lr_on=solver_config["step_lr_on"],
         device=device,
         log_train_steps=base_config["log_train_steps"],
     )

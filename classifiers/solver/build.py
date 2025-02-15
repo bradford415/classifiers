@@ -16,7 +16,6 @@ def build_solvers(
         scheduler_params: the parameters used to build the learning rate scheduler
         optimizer: the optimizer used during training
     """
-    breakpoint()
     optimizer_name = optimizer_params["name"]
     scheduler_name = scheduler_params["name"]
 

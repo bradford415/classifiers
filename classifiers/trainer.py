@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import torch
 from torch import nn
-from torch.utils import data
+from torch.utils import data 
 
 from classifiers.evaluate import (AverageMeter, evaluate,
                                   load_model_checkpoint, topk_accuracy)
@@ -23,6 +23,7 @@ class Trainer:
     def __init__(
         self,
         output_dir: str,
+        step_lr_on: str,
         device: torch.device = torch.device("cpu"),
         log_train_steps: int = 20,
     ):
@@ -32,10 +33,15 @@ class Trainer:
             output_path: Path to save the train outputs
             use_cuda: Whether to use the GPU
         """
+        if step_lr_on not in {"epochs", "steps"}:
+            raise ValueError("step_lr_on must be either 'epochs' or 'steps'")
+        
         self.device = device
 
         self.output_dir = Path(output_dir)
         self.log_train_steps = log_train_steps
+        
+        self.step_lr_on = step_lr_on
 
         # mixed precision training not yet supported on mps
         self.enable_amp = True if not self.device.type == "mps" else False
@@ -133,11 +139,17 @@ class Trainer:
             # Evaluate the model on the validation set
             log.info("\nEvaluating on validation set — epoch %d", epoch)
 
-            # TODO: probably save metrics output into csv
             val_loss_meter, acc1_meter = self._evaluate(
                 model, criterion, dataloader_val
             )
             val_loss.append(val_loss_meter.avg)
+            
+            # Increment lr scheduler every epoch
+            if scheduler is not None and self.step_lr_on == "epoch":
+                if not isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                    scheduler.step()
+                else:
+                    scheduler.step(val_loss[-1])
 
             acc1 = acc1_meter.avg.item()
             epoch_acc1.append(acc1)
@@ -151,7 +163,7 @@ class Trainer:
 
                 log.info(
                     "new best top 1 accuracy of %.2f found at epoch %d; saving checkpoint",
-                    acc1 * 100,
+                    acc1,
                     epoch,
                 )
                 self._save_model(
@@ -297,8 +309,11 @@ class Trainer:
                 optimizer.zero_grad()
 
                 # Increment lr scheduler every effective batch_size (grad_accum_steps)
-                if scheduler is not None:
-                    scheduler.step()
+                if scheduler is not None and self.step_lr_on == "steps":
+                    if not isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                        scheduler.step()
+                    else:
+                        scheduler.step(loss.item())
 
                 # I think having this in the grad_accum_steps if block is correct since the lr is only used during
                 # optimizer step
@@ -311,24 +326,21 @@ class Trainer:
                 # Update the learning rate plot after n steps
                 plot_lr(self.learning_rate, save_dir=str(self.output_dir))
 
-            # TODO: remove this if block if the rest looks okay
-            # if (steps) % 100 == 0:
-
-            #     log.info(
-            #         "Current learning_rate: %s\n",
-            #         curr_lr,
-            #     )
-
-            if (steps) % self.log_train_steps == 0:
-                # breakpoint()
+            if (steps) % 200 == 0:
 
                 log.info(
-                    "epoch: %-10d iter: %d/%-10d train loss: %-10.4f last lr: %-10.6f",
+                    "Current learning_rate: %s\n",
+                    curr_lr,
+                )
+
+            if (steps) % self.log_train_steps == 0:
+
+                log.info(
+                    "epoch: %-10d iter: %d/%-10d train loss: %-10.4f",
                     epoch,
                     steps,
                     len(dataloader_train),
                     loss.item() * grad_accum_steps,
-                    self.learning_rate[-1] if self.learning_rate else 0,
                 )
 
         return losses

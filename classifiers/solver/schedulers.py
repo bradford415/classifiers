@@ -75,11 +75,28 @@ def make_cosine_anneal(optimizer: torch.optim.Optimizer):
 
 def reduce_lr_on_plateau(
     optimizer: torch.optim.Optimizer,
-    factor: float,
+    mode: str = "min",
+    factor: float = 0.1,
     patience: int = 10,
     threshold: float = 1e-4,
 ):
-    """Builds the reduce lr on plateau lr scheduler"""
+    """Builds the reduce lr on plateau scheduler
+
+    Args:
+        mode: "min" reduces the lr when a value does not decrease any more;
+              "max" reduces the lr when a value does not increase any more
+        factor: multiplicative factor to reduce the learning rate by; this updates the
+                current learning rate as opposed to something like LambdaLR which updates
+                the initial learning rate
+        patience: number of epochs to wait for no imporovement before reducing the learning rate
+        threshold: threshold to determine if the value has improved
+                   i.e., the value must improve by more than this threshold to count as an improvement
+
+    """
     return torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer=optimizer, factor=factor, patience=patience, threshold=threshold
+        optimizer=optimizer,
+        mode=mode,
+        factor=factor,
+        patience=patience,
+        threshold=threshold,
     )
