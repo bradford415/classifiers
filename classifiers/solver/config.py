@@ -42,7 +42,7 @@ def resnet50_imagenet_config():
     """
     config = ml_collections.ConfigDict()
 
-    # TODO: decide if I want this in the config.py or yaml General params
+    # TODO: decide if I want this in the config.py or yaml General params; currently these params are not used
     config.train_batch_size = 512
     config.val_batch_size = 128
     config.num_epochs = 90
@@ -58,9 +58,9 @@ def resnet50_imagenet_config():
     config.step_lr_on = "epochs" # step the lr after n "epochs" or "steps" 
     config.lr_scheduler = ml_collections.ConfigDict()
     config.lr_scheduler.name = "reduce_lr_on_plateau"
-    config.lr_scheduler.mode = "min"  # reduces on error plateau (1 - accuracy)
+    config.lr_scheduler.mode = "min"
     config.lr_scheduler.factor = 0.1
-    config.lr_scheduler.patience = 10  # epochs of no improvement
+    config.lr_scheduler.patience = 5  # epochs of no improvement
 
     return config
 

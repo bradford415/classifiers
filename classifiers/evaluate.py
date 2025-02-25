@@ -53,6 +53,8 @@ def evaluate(
         losses.update(loss.item(), samples.shape[0])
         top1.update(acc1[0], samples.shape[0])
         top5.update(acc5[0], samples.shape[0])
+        
+    log.info("top 1 accuracy of %.2f%%", top1.avg.item())
 
     return losses, top1
 

@@ -28,19 +28,21 @@ dataset:
   num_workers: 4
 
 train:
-  # Configurations for learning parameters such as the optmizier and lr scheduler
+  # Configurations for training objects such as the optmizier and lr scheduler
+  solver_config: "resnet50_imagenet"
+  
   learning_config: "vit_learning_config"
 
   batch_size: 128
 
-  # Gradient accumulation batch size; ViT paper uses a batch size of 512 but most GPUs can't 
-  # handle that so we'll accumulate gradients for grad_accum_bs/batch_size steps before updating the weights; 
-  # therefore batch_size must be divisible by grad_accum_bs
+  # Gradient accumulation batch size;
+  # accumulate gradients for grad_accum_bs/batch_size steps before updating the weights; 
+  # therefore batch_size must be divisible by grad_accum_bs; beneficial with constrained memory
   grad_accum_bs: 256
 
   # The epoch to start on; starting at 1 makes calculations for logging and checkpointing more intuitive
   start_epoch: 1
-  epochs: 300
+  epochs: 100
 
   # Number of epochs to checkpoint after; use 'null' to turn off checkpointing
   ckpt_epochs: 5
@@ -62,9 +64,6 @@ cuda:
 reproducibility:
   seed: 42
 
-
-# Params for training objects
-solver: "resnet50_imagenet"
 
 # TODO: Should probably make these configs in code some how; basically find optimal values and hard code them
 # ViT learning config described in the paper; Table 3

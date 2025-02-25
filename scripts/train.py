@@ -74,7 +74,7 @@ def main(base_config_path: str, model_config_path: str):
     reproduce.reproducibility(**base_config["reproducibility"])
 
     # Extract solver config
-    solver_config = solver_configs[base_config["solver"]]()
+    solver_config = solver_configs[base_config["train"]["solver_config"]]()
 
     # Set gpu parameters
     train_kwargs = {
@@ -195,8 +195,8 @@ def main(base_config_path: str, model_config_path: str):
 
     # Save configuration files for reproducibility
     reproduce.save_configs(
-        config_dicts=[base_config, model_config],
-        save_names=["base_config.json", "model_config.json"],
+        config_dicts=[(base_config, "base_config.json"), (model_config, "model_config.json")],
+        solver_dict=(solver_config.to_dict(), "solver_config.json"),
         output_path=output_path / "reproduce",
     )
 

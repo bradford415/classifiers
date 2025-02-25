@@ -145,12 +145,12 @@ class Trainer:
             val_loss.append(val_loss_meter.avg)
             
             # Increment lr scheduler every epoch
-            if scheduler is not None and self.step_lr_on == "epoch":
+            if scheduler is not None and self.step_lr_on == "epochs":
                 if not isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
                     scheduler.step()
                 else:
                     scheduler.step(val_loss[-1])
-
+            
             acc1 = acc1_meter.avg.item()
             epoch_acc1.append(acc1)
 
