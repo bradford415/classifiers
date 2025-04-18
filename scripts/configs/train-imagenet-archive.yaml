@@ -31,6 +31,8 @@ train:
   # Configurations for training objects such as the optmizier and lr scheduler
   solver_config: "resnet50_imagenet"
   
+  learning_config: "vit_learning_config"
+
   batch_size: 128
 
   # Gradient accumulation batch size;
