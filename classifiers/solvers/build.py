@@ -1,6 +1,6 @@
 from collections.abc import Iterable
 
-from classifiers.solver import optimizer_map, scheduler_map
+from classifiers.solvers import optimizer_map, scheduler_map
 
 
 def build_solvers(

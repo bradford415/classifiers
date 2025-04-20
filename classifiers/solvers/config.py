@@ -8,26 +8,26 @@ def vit_b16_imagenet_config():
 
     Naming convention: vit-{variant}{patch_size}_{dataset}_config
 
-    Solver parameters derived from https://arxiv.org/pdf/2010.11929 in Table 3
-
-    ## TODO: make note to reference the DeiT paper and the small weight decay
+    Solver parameters derived from the DeiT paper https://arxiv.org/pdf/2012.12877
+    in Table 9; compares ViT with DeiT; the idea behind DeiT is to be data-efficient
+    so anyone can train a ViT model on ImageNet; this paper has a few modifications
+    from ViT but I'll try training a ViT model with the DeiT parameters to see if it works
     """
     config = ml_collections.ConfigDict()
 
     # Optimizer params
     config.optimizer = ml_collections.ConfigDict()
-    config.optimizer.name = "sgd"
-    config.optimizer.lr = 0.1
+    config.optimizer.name = "adamw"
+    config.optimizer.lr = 0.001 # 0.0005 * (effective_batch_size / 512)
     config.optimizer.weight_decay = 5e-2  # 0.05
     config.optimizer.momentum = 0.9
 
     # Scheduler params
     config.step_lr_on = "epochs"  # step the lr after n "epochs" or "steps"
     config.lr_scheduler = ml_collections.ConfigDict()
-    config.lr_scheduler.name = "reduce_lr_on_plateau"
-    config.lr_scheduler.mode = "min"
-    config.lr_scheduler.factor = 0.1
-    config.lr_scheduler.patience = 5  # epochs of no improvement
+    config.lr_scheduler.name = "cosine_decay"
+    config.lr_scheduler.warmup_steps = 5
+    # NOTE: total steps is set by the number of epochs
 
     return config
 

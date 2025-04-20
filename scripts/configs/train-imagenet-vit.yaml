@@ -28,21 +28,23 @@ dataset:
   num_workers: 4
 
 train:
-  # Configurations for training objects such as the optmizier and lr scheduler
+  # Configurations for training objects such as the optmizier, lr scheduler
+  # See solvers.config for available configs
   solver_config: "resnet50_imagenet"
-  
-  learning_config: "vit_learning_config"
 
+  ######### START HERE, finish up the parameters and get running, need to replace total steps with the value in this config
+  
   batch_size: 128
 
   # Gradient accumulation batch size;
-  # accumulate gradients for grad_accum_bs/batch_size steps before updating the weights; 
-  # therefore batch_size must be divisible by grad_accum_bs; beneficial with constrained memory
-  grad_accum_bs: 256
+  # accumulate (sum) gradients for grad_accum_bs//batch_size steps before updating the weights; 
+  # therefore batch_size must be divisible by grad_accum_bs; beneficial with constrained memory when
+  # trying to replicate a larger batch size
+  grad_accum_bs: 1024
 
   # The epoch to start on; starting at 1 makes calculations for logging and checkpointing more intuitive
   start_epoch: 1
-  epochs: 100
+  epochs: 300
 
   # Number of epochs to checkpoint after; use 'null' to turn off checkpointing
   ckpt_epochs: 5
@@ -64,21 +66,3 @@ cuda:
 reproducibility:
   seed: 42
 
-
-# TODO: Should probably make these configs in code some how; basically find optimal values and hard code them
-# ViT learning config described in the paper; Table 3
-vit_learning_config:
-  optimizer: "sgd"
-
-  learning_rate: 0.003
-
-  # L2 regulartization penalty to add to the loss function
-  weight_decay: 0.0
-
-  # Max norm for gradient clipping
-  max_norm: 1.0
-
-  momentum: 0.9
-
-  lr_scheduler: "warmup_cosine_decay"
-  lr_params:

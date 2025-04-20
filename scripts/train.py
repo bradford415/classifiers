@@ -13,8 +13,8 @@ from torch.utils.data import DataLoader
 from classifiers.dataset.imagenet import build_imagenet
 from classifiers.evaluate import topk_accuracy
 from classifiers.models import darknet53, resnet50, vit_base
-from classifiers.solver import solver_configs
-from classifiers.solver.build import build_solvers
+from classifiers.solvers import solver_configs
+from classifiers.solvers.build import build_solvers
 from classifiers.trainer import Trainer
 from classifiers.utils import reproduce
 
