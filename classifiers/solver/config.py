@@ -5,9 +5,9 @@ __all__ = ["resnet50_imagenet_config"]
 
 def vit_b16_imagenet_config():
     """Returns the ViT-B/16 configuration.
-    
+
     Naming convention: vit-{variant}{patch_size}_{dataset}_config
-    
+
     Solver parameters derived from https://arxiv.org/pdf/2010.11929 in Table 3
 
     ## TODO: make note to reference the DeiT paper and the small weight decay
@@ -22,7 +22,7 @@ def vit_b16_imagenet_config():
     config.optimizer.momentum = 0.9
 
     # Scheduler params
-    config.step_lr_on = "epochs" # step the lr after n "epochs" or "steps" 
+    config.step_lr_on = "epochs"  # step the lr after n "epochs" or "steps"
     config.lr_scheduler = ml_collections.ConfigDict()
     config.lr_scheduler.name = "reduce_lr_on_plateau"
     config.lr_scheduler.mode = "min"
@@ -32,7 +32,7 @@ def vit_b16_imagenet_config():
     return config
 
 
-def resnet50_imagenet_config(): 
+def resnet50_imagenet_config():
     """Returns the solver parameters used for Resnet50 on the ImageNet dataset
 
     Parameters defined in the ResNet paper https://arxiv.org/abs/1512.03385 section 3.4
@@ -47,7 +47,7 @@ def resnet50_imagenet_config():
     config.optimizer.momentum = 0.9
 
     # Scheduler params
-    config.step_lr_on = "epochs" # step the lr after n "epochs" or "steps" 
+    config.step_lr_on = "epochs"  # step the lr after n "epochs" or "steps"
     config.lr_scheduler = ml_collections.ConfigDict()
     config.lr_scheduler.name = "reduce_lr_on_plateau"
     config.lr_scheduler.mode = "min"
@@ -71,6 +71,7 @@ def get_testing():
     config.classifier = "token"
     config.representation_size = None
     return config
+
 
 # def get_l32_config():
 #     """Returns the ViT-L/32 configuration."""

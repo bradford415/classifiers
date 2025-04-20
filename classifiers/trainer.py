@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import torch
 from torch import nn
-from torch.utils import data 
+from torch.utils import data
 
 from classifiers.evaluate import (AverageMeter, evaluate,
                                   load_model_checkpoint, topk_accuracy)
@@ -35,12 +35,12 @@ class Trainer:
         """
         if step_lr_on not in {"epochs", "steps"}:
             raise ValueError("step_lr_on must be either 'epochs' or 'steps'")
-        
+
         self.device = device
 
         self.output_dir = Path(output_dir)
         self.log_train_steps = log_train_steps
-        
+
         self.step_lr_on = step_lr_on
 
         # mixed precision training not yet supported on mps
@@ -143,14 +143,16 @@ class Trainer:
                 model, criterion, dataloader_val
             )
             val_loss.append(val_loss_meter.avg)
-            
+
             # Increment lr scheduler every epoch
             if scheduler is not None and self.step_lr_on == "epochs":
-                if not isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                if not isinstance(
+                    scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau
+                ):
                     scheduler.step()
                 else:
                     scheduler.step(val_loss[-1])
-            
+
             acc1 = acc1_meter.avg.item()
             epoch_acc1.append(acc1)
 
@@ -310,7 +312,9 @@ class Trainer:
 
                 # Increment lr scheduler every effective batch_size (grad_accum_steps)
                 if scheduler is not None and self.step_lr_on == "steps":
-                    if not isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                    if not isinstance(
+                        scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau
+                    ):
                         scheduler.step()
                     else:
                         scheduler.step(loss.item())

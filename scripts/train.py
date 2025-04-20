@@ -195,7 +195,10 @@ def main(base_config_path: str, model_config_path: str):
 
     # Save configuration files for reproducibility
     reproduce.save_configs(
-        config_dicts=[(base_config, "base_config.json"), (model_config, "model_config.json")],
+        config_dicts=[
+            (base_config, "base_config.yaml"),
+            (model_config, "model_config.yaml"),
+        ],
         solver_dict=(solver_config.to_dict(), "solver_config.json"),
         output_path=output_path / "reproduce",
     )

@@ -7,6 +7,7 @@ from typing import Dict, Sequence
 
 import numpy as np
 import torch
+import yaml
 
 log = logging.getLogger(__name__)
 
@@ -27,17 +28,17 @@ def model_info(model):
 
 
 def save_configs(
-    config_dicts: Sequence[tuple[Dict, str]], solver_dict: tuple[dict, str], output_path: Path
+    config_dicts: Sequence[tuple[Dict, str]],
+    solver_dict: tuple[dict, str],
+    output_path: Path,
 ):
     """Save configuration dictionaries as json files in the output; this allows
     reproducibility of the model by saving the parameters used
 
     Args:
-        config_dicts: a sequence of tuples where each tuple contains a dict of the configuration parameters 
+        config_dicts: a sequence of tuples where each tuple contains a dict of the configuration parameters
                       used to to run the script (e.g., the base config and the model config) and a str for the
                       name to save the json file as
-        save_names: a tuple containing a dict of parameters used for the solver (i.e., optimizer, lr_scheduler)
-                    and the name to save the json file as
         output_path: Output directory to save the configuration files; it's recommened to have the
                      final dir named "reproduce"
     """
@@ -47,8 +48,10 @@ def save_configs(
     # Save yaml configurations
     for config_dict, save_name in config_dicts:
         with open(output_path / save_name, "w") as f:
-            json.dump(config_dict, f, indent=4)
-            
+            yaml.dump(
+                config_dict, f, indent=4, sort_keys=False, default_flow_style=False
+            )
+
     # Save solver parameters (optimizer, lr_scheduler, etc.)
     param_dict, save_name = solver_dict
     with open(output_path / save_name, "w") as f:
