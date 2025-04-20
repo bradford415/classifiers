@@ -32,7 +32,6 @@ train:
   # See solvers.config for available configs
   solver_config: "resnet50_imagenet"
 
-  ######### START HERE, finish up the parameters and get running, need to replace total steps with the value in this config
   
   batch_size: 128
 

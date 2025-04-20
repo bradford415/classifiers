@@ -8,12 +8,14 @@ def vit_b16_imagenet_config():
 
     Naming convention: vit-{variant}{patch_size}_{dataset}_config
 
-    Solver parameters derived from the DeiT paper https://arxiv.org/pdf/2012.12877
+    Solver parameters derived from the DeiT paper https://arxiv.org/pdf/2012.12877 Table 9
     in Table 9; compares ViT with DeiT; the idea behind DeiT is to be data-efficient
     so anyone can train a ViT model on ImageNet; this paper has a few modifications
     from ViT but I'll try training a ViT model with the DeiT parameters to see if it works
     """
     config = ml_collections.ConfigDict()
+
+    # NOTE: DeiT uses an effective batch size of 1024 for 300 epochs
 
     # Optimizer params
     config.optimizer = ml_collections.ConfigDict()
