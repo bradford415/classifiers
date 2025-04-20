@@ -25,3 +25,10 @@ After running the download script, the ImageNet dataset will be organized as sho
     	│   │   ├── img_2.jpeg  
     	│   ├── ...                
     	└── 
+
+## Results
+TODO
+| Detector / Backbone | Pretrained  | Dataset  | Best mAP / Epoch |
+|---------------------|-------------|----------|------------------|
+| YoloV3 / DarkNet53  | Scratch     | COCO     | 39.2% / 59       |
+| YoloV3 / DarkNet53  | ImageNet    | COCO     | 40.3% / 46       |
