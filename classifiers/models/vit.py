@@ -345,7 +345,7 @@ class ViT(nn.Module):
 
 
 # TODO put which version in function name
-def vit_base(
+def create_vit(
     image_size: Union[int, tuple[int, int]],
     patch_size: int,
     num_classes: int,
@@ -359,7 +359,7 @@ def vit_base(
     attention_dropout: float = 0.0,
     emb_dropout: float = 0.0,
 ):
-    """Create the ViT-base classifier; see ViT() class for parameter descriptions"""
+    """Create the ViT classifier; see ViT() class for parameter descriptions"""
     return ViT(
         image_size=image_size,
         patch_size=patch_size,

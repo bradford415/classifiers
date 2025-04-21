@@ -1,6 +1,24 @@
 from collections.abc import Iterable
 
-from classifiers.solvers import optimizer_map, scheduler_map
+import torch
+
+from classifiers.solvers.schedulers import (make_cosine_anneal,
+                                            reduce_lr_on_plateau,
+                                            warmup_cosine_decay)
+
+optimizer_map = {
+    "adam": torch.optim.Adam,
+    "adamw": torch.optim.AdamW,
+    "sgd": torch.optim.SGD,
+}
+
+scheduler_map = {
+    "step_lr": torch.optim.lr_scheduler.StepLR,
+    "lambda_lr": torch.optim.lr_scheduler.LambdaLR,
+    "cosine_annealing_warm_restarts": make_cosine_anneal,  # quickly decays lr then spikes back up for a "warm restart" https://paperswithcode.com/method/cosine-annealing
+    "warmup_cosine_decay": warmup_cosine_decay,  # linearly increases lr then decays it with a cosine function
+    "reduce_lr_on_plateau": reduce_lr_on_plateau,
+}
 
 
 def build_solvers(
@@ -37,14 +55,3 @@ def build_solvers(
         raise ValueError(f"Unknown lr_scheduler: {scheduler_name}")
 
     return optimizer, scheduler
-
-    if scheduler_name == "warmup_cosine_decay":  # TODO: put this in config
-        raise NotImplementedError
-        # return warmup_cosine_decay(
-        #     optimizer,
-        #     warmup_steps=scheduler_params["warmup_steps"],
-        #     total_steps=scheduler_params["total_steps"],
-        # )
-        return scheduler_mapreduce_lr_on_plateau(optimizer, **scheduler_params)
-    else:
-        raise ValueError(f"Unknown lr_scheduler: {scheduler_name }")

@@ -7,10 +7,10 @@
 # Classifier parameters
 classifier:
   # the classifier to train; must exist in classifier_map in train.py
-  name: "vit_base"
+  name: "vit-b16"
 
 # Vision transformer parameters; most parameters defined in ViT paper Table 1
-vit_base:
+params:
   # classification method to use and pass into the final MLP; 'cls' = extra token only, 'mean' = globally average the patches and the token
   pool: "cls"
 
@@ -36,5 +36,4 @@ vit_base:
 
   attention_dropout: 0.0
   emb_dropout: 0.1
-
 

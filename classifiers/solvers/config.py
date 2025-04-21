@@ -1,6 +1,6 @@
 import ml_collections
 
-__all__ = ["resnet50_imagenet_config"]
+__all__ = ["resnet50_imagenet_config", "vit_b16_imagenet_config"]
 
 
 def vit_b16_imagenet_config():
@@ -15,21 +15,31 @@ def vit_b16_imagenet_config():
     """
     config = ml_collections.ConfigDict()
 
-    # NOTE: DeiT uses an effective batch size of 1024 for 300 epochs
+    # Training-related parameters
+    config.training = ml_collections.ConfigDict()
+    config.training.batch_size = 64
+    config.training.effective_batch_size = (
+        1024  # batch_size * gradient_accumulation_steps
+    )
+    config.training.max_norm = 1.0  # max norm for gradient clipping
+    config.training.epochs = 300
+
+    # Validation-related parameters
+    config.validation = ml_collections.ConfigDict()
+    config.validation.batch_size = 64
 
     # Optimizer params
     config.optimizer = ml_collections.ConfigDict()
     config.optimizer.name = "adamw"
-    config.optimizer.lr = 0.001 # 0.0005 * (effective_batch_size / 512)
+    config.optimizer.lr = 0.001  # 0.0005 * (effective_batch_size / 512)
     config.optimizer.weight_decay = 5e-2  # 0.05
-    config.optimizer.momentum = 0.9
 
     # Scheduler params
     config.step_lr_on = "epochs"  # step the lr after n "epochs" or "steps"
     config.lr_scheduler = ml_collections.ConfigDict()
-    config.lr_scheduler.name = "cosine_decay"
+    config.lr_scheduler.name = "warmup_cosine_decay"
     config.lr_scheduler.warmup_steps = 5
-    # NOTE: total steps is set by the number of epochs
+    config.lr_scheduler.total_steps = config.training.epochs  # total number of epochs
 
     return config
 

@@ -12,14 +12,14 @@ from torch.utils.data import DataLoader
 
 from classifiers.dataset.imagenet import build_imagenet
 from classifiers.evaluate import topk_accuracy
-from classifiers.models import darknet53, resnet50, vit_base
+from classifiers.models import create_vit, darknet53, resnet50
 from classifiers.solvers import solver_configs
 from classifiers.solvers.build import build_solvers
 from classifiers.trainer import Trainer
 from classifiers.utils import reproduce
 
 classifier_map: Dict[str, Any] = {
-    "vit_base": vit_base,
+    "vit-b16": create_vit,
     "resnet50": resnet50,
 }
 
@@ -62,11 +62,6 @@ def main(base_config_path: str, model_config_path: str):
         handlers=[logging.FileHandler(log_path), logging.StreamHandler()],
     )
 
-    if dev_mode:
-        log.info("NOTE: executing in dev mode")
-        base_config["train"]["batch_size"] = 2
-        base_config["validation"]["batch_size"] = 2
-
     log.info("initializing...\n")
     log.info("writing outputs to %s", str(output_path))
 
@@ -76,24 +71,40 @@ def main(base_config_path: str, model_config_path: str):
     # Extract solver config
     solver_config = solver_configs[base_config["train"]["solver_config"]]()
 
+    if dev_mode:
+        log.info("NOTE: executing in dev mode")
+        solver_config.training.batch_size = 2
+        solver_config.validation.batch_size = 2
+
+    # Extract training and val params
+    batch_size = solver_config.training.batch_size
+    effective_bs = solver_config.training.effective_batch_size
+    epochs = solver_config.training.epochs
+    
+    val_batch_size = solver_config.validation.batch_size
+
     # Set gpu parameters
     train_kwargs = {
-        "batch_size": base_config["train"]["batch_size"],
+        "batch_size": batch_size,
         "shuffle": True,
         "num_workers": base_config["dataset"]["num_workers"] if not dev_mode else 0,
     }
     val_kwargs = {
-        "batch_size": base_config["validation"]["batch_size"],
+        "batch_size": val_batch_size,
         "shuffle": False,
         "num_workers": base_config["dataset"]["num_workers"] if not dev_mode else 0,
     }
 
-    if base_config["train"]["grad_accum_bs"] % base_config["train"]["batch_size"] == 0:
-        grad_accum_steps = (
-            base_config["train"]["grad_accum_bs"] // base_config["train"]["batch_size"]
-        )
+    # Gradient accumulation;
+    # accumulate (sum) gradients for effective//batch_size steps before updating the weights;
+    # therefore batch_size must be divisible by grad_accum_bs; beneficial with constrained memory when
+    # trying to replicate a larger batch size
+    if effective_bs % batch_size == 0 and effective_bs >= batch_size:
+        grad_accum_steps = effective_bs // batch_size
     else:
-        raise ValueError("grad_accum_bs must be divisible by batch_size")
+        raise ValueError(
+            "grad_accum_bs must be divisible by batch_size and greater than or equal to batch_size"
+        )
 
     # Set device specific characteristics
     use_cpu = False
@@ -138,18 +149,18 @@ def main(base_config_path: str, model_config_path: str):
         **val_kwargs,
     )
 
-    # Extract initialization parameters for the classifier
+    # Extract initialization parameters for the classifier; TODO create a create classifier function
     classifier_name = model_config["classifier"]["name"]
     if "vit" in classifier_name:
         classifier_params = {
             "image_size": 224,
             "num_classes": dataset_train.num_classes,
-            **model_config[classifier_name],
+            **model_config["params"],
         }
     elif "resnet" in classifier_name:
         classifier_params = {
             "num_classes": dataset_train.num_classes,
-            **model_config[classifier_name],
+            **model_config["params"],
         }
     else:
         ValueError("classifier not recognized.")
@@ -168,39 +179,20 @@ def main(base_config_path: str, model_config_path: str):
     # Extract the train arguments from base config
     train_args = base_config["train"]
 
-    # Extract the learning parameters such as lr, optimizer params and lr scheduler
-    learning_config = train_args["learning_config"]
-    learning_params = base_config[learning_config]
-
     optimizer, lr_scheduler = build_solvers(
         model.parameters(), solver_config.optimizer, solver_config.lr_scheduler
     )
 
-    total_steps = (len(dataloader_train) * train_args["epochs"]) // grad_accum_steps
+    total_steps = (len(dataloader_train) * epochs) // grad_accum_steps
     log.info(
         "total effective steps (steps * epochs // grad_accum_steps): %d", total_steps
     )
-
-    # TODO: should probably put this in a config; also, total_steps needs to be calculated based on desired epochs
-    # lr_scheduler = scheduler_map[learning_params["lr_scheduler"]](
-    #     optimizer, warmup_steps=10000, total_steps=total_steps
-    # )
 
     trainer = Trainer(
         output_dir=str(output_path),
         step_lr_on=solver_config["step_lr_on"],
         device=device,
         log_train_steps=base_config["log_train_steps"],
-    )
-
-    # Save configuration files for reproducibility
-    reproduce.save_configs(
-        config_dicts=[
-            (base_config, "base_config.yaml"),
-            (model_config, "model_config.yaml"),
-        ],
-        solver_dict=(solver_config.to_dict(), "solver_config.json"),
-        output_path=output_path / "reproduce",
     )
 
     # Build trainer args used for the training
@@ -212,9 +204,9 @@ def main(base_config_path: str, model_config_path: str):
         "optimizer": optimizer,
         "scheduler": lr_scheduler,
         "grad_accum_steps": grad_accum_steps,
-        "max_norm": learning_params["max_norm"],
-        "start_epoch": train_args["start_epoch"],
-        "epochs": train_args["epochs"],
+        "max_norm": solver_config.training.max_norm,
+        "start_epoch": 1,
+        "epochs": epochs,
         "ckpt_epochs": train_args["ckpt_epochs"],
         "checkpoint_path": train_args["checkpoint_path"],
     }

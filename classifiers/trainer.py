@@ -319,16 +319,23 @@ class Trainer:
                     else:
                         scheduler.step(loss.item())
 
-                # I think having this in the grad_accum_steps if block is correct since the lr is only used during
-                # optimizer step
+                if self.step_lr_on == "steps":
+                    # I think having this in the grad_accum_steps if block is correct since the lr is only used during
+                    # optimizer step
+                    curr_lr = round(optimizer.state_dict()["param_groups"][0]["lr"], 6)
+                    self.learning_rate.append(curr_lr)
+
+            
+            ############################# START HERE, verify the lr is supposed to be 0 for the first epoch
+            if self.step_lr_on == "epochs":
                 curr_lr = round(optimizer.state_dict()["param_groups"][0]["lr"], 6)
                 self.learning_rate.append(curr_lr)
-
+            
             epoch_loss.append(loss.item())
 
             if (steps) % 10 == 0:
                 # Update the learning rate plot after n steps
-                plot_lr(self.learning_rate, save_dir=str(self.output_dir))
+                plot_lr(self.learning_rate, x_label=self.step_lr_on, save_dir=str(self.output_dir))
 
             if (steps) % 200 == 0:
 

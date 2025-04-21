@@ -9,26 +9,34 @@ class WarmupCosineSchedule(LambdaLR):
     """Linear warmup and then cosine decay.
 
     Works in two phases:
-        1. Linearly increases learning rate from 0 to the initial lr over `warmup_steps` 
+        1. Linearly increases learning rate from 0 to the initial lr over `warmup_steps`
         training steps.
         2. Decreases learning rate from inital lr to 0 over remaining `t_total - warmup_steps` steps following a cosine curve.
     """
 
-    def __init__(self, optimizer: Optimizer, warmup_steps: int, total_steps: int, cycles:float = 0.5, last_epoch=-1):
+    def __init__(
+        self,
+        optimizer: Optimizer,
+        warmup_steps: int,
+        total_steps: int,
+        num_cycles: float = 0.5,
+        last_epoch=-1,
+    ):
         """Initialize the warmup cosine decay scheduler
 
         Args:
             optimizer: torch optimizer to update w/ the learning rate to be updated
-            warmup_steps: Linearly increase learning rate from 0 to 1 over this many steps; after
+            warmup_steps: linearly increase learning rate from 0 to 1 over this many steps; after
                           warmup_steps, learning rate decreases from 1 to 0 following a cosine curve
             total_steps: total number of training steps/epochs; cosine decay will start after warmup_steps
                          and will slowly decay to 0
-            cycles: 
-            last_epoch: index of the last epoch
+            num_cycles: the number of waves in the cosine schedule. Defaults to 0.5
+            (decrease from the max value to 0 following a half-cosine).
+            last_epoch: index of the last epoch when resuming training; defaults to -1
         """
         self.warmup_steps = warmup_steps
         self.t_total = total_steps
-        self.cycles = cycles
+        self.num_cycles = num_cycles
         super().__init__(optimizer, self.lr_lambda, last_epoch=last_epoch)
 
     def lr_lambda(self, step):
@@ -45,7 +53,7 @@ class WarmupCosineSchedule(LambdaLR):
             max(1, self.t_total - self.warmup_steps)
         )
         return max(
-            0.0, 0.5 * (1.0 + math.cos(math.pi * float(self.cycles) * 2.0 * progress))
+            0.0, 0.5 * (1.0 + math.cos(math.pi * float(self.num_cycles) * 2.0 * progress))
         )
 
 
@@ -61,7 +69,7 @@ def warmup_cosine_decay(
         total_steps: total number of steps to decay to 0 over; cosine decay will start after warmup_steps
     """
     return WarmupCosineSchedule(
-        optimizer, warmup_steps, t_total=total_steps, cycles=0.5, last_epoch=-1
+        optimizer, warmup_steps, total_steps=total_steps, num_cycles=0.5, last_epoch=-1
     )
 
 

@@ -25,7 +25,7 @@ def plot_loss(train_loss: list[float], val_loss: list[float], save_dir: str):
     plt.close()
 
 
-def plot_lr(lr: list[float], save_dir: str):
+def plot_lr(lr: list[float], x_label, save_dir: str):
     """Plots the learning rate per step; this is useful to visualize what the scheduler is doing"""
     save_name = Path(save_dir) / "learning_rate.jpg"
 
@@ -35,7 +35,7 @@ def plot_lr(lr: list[float], save_dir: str):
 
     plt.legend(["learning rate"])
     plt.title("lr per step")
-    ax.set_xlabel("step")
+    ax.set_xlabel(x_label)
     ax.set_ylabel("learning rate")
 
     fig.savefig(save_name, bbox_inches="tight")
