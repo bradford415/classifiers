@@ -17,17 +17,18 @@ class ImageNet(datasets.ImageFolder):
         self,
         image_folder: str,
         transforms: T,
+        image_size: int = 224,
         dev_mode: bool = False,
     ):
         """TODO
 
         Args:
             image_folder: path to the images of the specific split
-            split: the dataset split type; train, val, or test
-            dev_mode: TODO
+            dev_mode: only uses a small amount of samples to quickly run the code
         """
         super().__init__(root=image_folder, transform=transforms)
 
+        self.image_size = image_size
         self.num_classes = 1000
 
         # Substantially reduces the dataset size to quickly test code
@@ -38,7 +39,7 @@ class ImageNet(datasets.ImageFolder):
         self.samples = self.samples[:10000]
 
 
-def make_imagenet_transforms(dataset_split):
+def make_imagenet_transforms(dataset_split: str, image_size: int = 224):
     """Initialize transforms for the coco dataset
 
     These transforms are based on torchvision transforms but are overrided in data/transforms.py
@@ -46,7 +47,7 @@ def make_imagenet_transforms(dataset_split):
 
     Args:
         dataset_split: which dataset split to use; `train` or `val`
-
+        image_size: square size of the image to resize/crop to; default is 224
     """
     img_size = 64 #224
 
@@ -80,6 +81,7 @@ def make_imagenet_transforms(dataset_split):
 def build_imagenet(
     root: str,
     dataset_split: str,
+    image_size: int = 224,
     dev_mode: bool = False,
 ):
     """Initialize the ImageNet2012 dataset
@@ -87,6 +89,7 @@ def build_imagenet(
     Args:
         root: full path to the dataset root
         split: which dataset split to use; `train` or `val`
+        image_size: square size of the image to resize/crop to; default is 224
         dev_mode: whether to build the dataset in dev mode; if true, this only uses a few samples
                          to quickly run the code
     """
@@ -98,7 +101,7 @@ def build_imagenet(
         images_dir = imagenet_root / "val"
 
     # Create the data augmentation transforms
-    data_transforms = make_imagenet_transforms(dataset_split)
+    data_transforms = make_imagenet_transforms(dataset_split, image_size=image_size)
 
     dataset = ImageNet(
         image_folder=images_dir,

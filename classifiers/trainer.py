@@ -44,7 +44,7 @@ class Trainer:
         self.step_lr_on = step_lr_on
 
         # mixed precision training not yet supported on mps
-        self.enable_amp = True if not self.device.type == "mps" else False
+        self.enable_amp = False #True if not self.device.type == "mps" else False
 
         # Metrics
         self.learning_rate = []
@@ -284,21 +284,22 @@ class Trainer:
 
                 loss = criterion(preds, targets)
 
+                if grad_accum_steps > 1:
+                    # Scale the loss by the number of accumulation steps to average the gradients
+                    loss = loss / grad_accum_steps
+
                 # if torch.isnan(loss):
                 #     breakpoint()
 
-                acc1, acc5 = topk_accuracy(preds, targets, topk=(1, 5))
-                losses.update(
-                    loss.item(), samples.shape[0]
-                )  # TODO: Need to check if this is accurate now that I added gradient accumulation; I think it is
-                top1.update(acc1[0], samples.shape[0])
-                top5.update(acc5[0], samples.shape[0])
+            acc1, acc5 = topk_accuracy(preds, targets, topk=(1, 5))
+            losses.update(
+                loss.item(), samples.shape[0]
+            )  # TODO: Need to check if this is accurate now that I added gradient accumulation; I think it is
+            top1.update(acc1[0], samples.shape[0])
+            top5.update(acc5[0], samples.shape[0])
 
             # https://github.com/jeonsworld/ViT-pytorch/blob/460a162767de1722a014ed2261463dbbc01196b6/train.py#L198
             #breakpoint()
-            if grad_accum_steps > 1:
-                # Scale the loss by the number of accumulation steps to average the gradients
-                loss = loss / grad_accum_steps
 
             # Calculate and accumulate gradients
             if self.enable_amp:
@@ -315,10 +316,26 @@ class Trainer:
 
                     scaler.step(optimizer)
                     scaler.update()
-                else:
+                else: # [p.grad for p in model.parameters() if p is not None]
+                total_norm = 0.0
+                    for p in model.parameters():
+                        if p.grad is not None:
+                            param_norm = p.grad.data.norm(2)
+                            total_norm += param_norm.item() ** 2
+                            print(f"pre clip l2 norm of parameters: {total_norm}")
+                    if epoch == 9 and steps == 9:
+                        breakpoint()
                     if max_norm is not None:
                         nn.utils.clip_grad_norm_(model.parameters(), max_norm)
                     optimizer.step()
+                total_norm = 0.0
+                for p in model.parameters():
+                    if p.grad is not None:
+                        param_norm = p.grad.data.norm(2)
+                        total_norm += param_norm.item() ** 2
+                print(f"post clip l2 norm of parameters: {total_norm}")
+                if total_norm == 0.0:
+                    breakpoint()
                 optimizer.zero_grad()
 
                 curr_lr = round(optimizer.state_dict()["param_groups"][0]["lr"], 8)
@@ -347,7 +364,7 @@ class Trainer:
                     save_dir=str(self.output_dir),
                 )
 
-            if (steps) % 200 == 0 and curr_lr is not None:
+            if (steps) % 3 == 0 and curr_lr is not None:
 
                 log.info(
                     "Current learning_rate: %s\n",

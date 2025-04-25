@@ -359,9 +359,8 @@ class ViT(nn.Module):
 
         #print(f"\n\nx tensor after transformer encoder: {x}")
         if x.isnan().sum() > 0:
-            print("Nans detected ahhh")
-            
-            np.savetxt("tens_after_transformer.txt", x.clone().detach().cpu().numpy())
+            print("NaNs detected")
+            #breakpoint()
 
 
         # Extract the extra cls token or use global average pooling to make the final

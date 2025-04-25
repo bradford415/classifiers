@@ -18,7 +18,7 @@ def vit_b16_imagenet_config():
 
     # Training-related parameters
     config.training = ml_collections.ConfigDict()
-    config.training.batch_size = 512
+    config.training.batch_size = 1024
     config.training.effective_batch_size = (
         1024  # batch_size * gradient_accumulation_steps
     )
@@ -27,7 +27,7 @@ def vit_b16_imagenet_config():
 
     # Validation-related parameters
     config.validation = ml_collections.ConfigDict()
-    config.validation.batch_size = 512
+    config.validation.batch_size = 64
 
     # Optimizer params
     config.optimizer = ml_collections.ConfigDict()
