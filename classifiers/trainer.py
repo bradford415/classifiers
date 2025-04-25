@@ -144,6 +144,10 @@ class Trainer:
             )
             val_loss.append(val_loss_meter.avg)
 
+            if self.step_lr_on == "epochs":
+                curr_lr = round(optimizer.state_dict()["param_groups"][0]["lr"], 8)
+                self.learning_rate.append(curr_lr)
+
             # Increment lr scheduler every epoch
             if scheduler is not None and self.step_lr_on == "epochs":
                 if not isinstance(
@@ -244,7 +248,7 @@ class Trainer:
         scheduler: torch.optim.lr_scheduler,
         epoch: int,
         grad_accum_steps: int,
-        max_norm: float,
+        max_norm: Optional[float],
         scaler: torch.amp,
     ):
         """Train one epoch
@@ -265,19 +269,23 @@ class Trainer:
 
         epoch_loss = []
         epoch_lr = []  # Store lr every epoch so I can visualize the scheduler
+        curr_lr = None
         for steps, (samples, targets) in enumerate(dataloader_train, 1):
             samples = samples.to(self.device)
             targets = targets.to(self.device)
 
             with torch.autocast(
                 device_type=self.device.type,
-                dtype=torch.float16,
+                dtype=torch.bfloat16,#torch.float16,
                 enabled=self.enable_amp,
             ):
                 # (b, num_classes)
                 preds = model(samples)
 
                 loss = criterion(preds, targets)
+
+                # if torch.isnan(loss):
+                #     breakpoint()
 
                 acc1, acc5 = topk_accuracy(preds, targets, topk=(1, 5))
                 losses.update(
@@ -287,6 +295,7 @@ class Trainer:
                 top5.update(acc5[0], samples.shape[0])
 
             # https://github.com/jeonsworld/ViT-pytorch/blob/460a162767de1722a014ed2261463dbbc01196b6/train.py#L198
+            #breakpoint()
             if grad_accum_steps > 1:
                 # Scale the loss by the number of accumulation steps to average the gradients
                 loss = loss / grad_accum_steps
@@ -300,15 +309,24 @@ class Trainer:
             if steps % grad_accum_steps == 0:
                 if self.enable_amp:
                     # Unscales the gradients of optimizer's assigned params in-place and clip as usual
-                    scaler.unscale_(optimizer)
-                    nn.utils.clip_grad_norm_(model.parameters(), max_norm)
+                    if max_norm is not None:
+                        scaler.unscale_(optimizer)
+                        nn.utils.clip_grad_norm_(model.parameters(), max_norm)
 
                     scaler.step(optimizer)
                     scaler.update()
                 else:
-                    nn.utils.clip_grad_norm_(model.parameters(), max_norm)
+                    if max_norm is not None:
+                        nn.utils.clip_grad_norm_(model.parameters(), max_norm)
                     optimizer.step()
                 optimizer.zero_grad()
+
+                curr_lr = round(optimizer.state_dict()["param_groups"][0]["lr"], 8)
+
+                if self.step_lr_on == "steps":
+                    # I think having this in the grad_accum_steps if block is correct since the lr is only used during
+                    # optimizer step
+                    self.learning_rate.append(curr_lr)
 
                 # Increment lr scheduler every effective batch_size (grad_accum_steps)
                 if scheduler is not None and self.step_lr_on == "steps":
@@ -319,25 +337,17 @@ class Trainer:
                     else:
                         scheduler.step(loss.item())
 
-                if self.step_lr_on == "steps":
-                    # I think having this in the grad_accum_steps if block is correct since the lr is only used during
-                    # optimizer step
-                    curr_lr = round(optimizer.state_dict()["param_groups"][0]["lr"], 6)
-                    self.learning_rate.append(curr_lr)
-
-            
-            ############################# START HERE, verify the lr is supposed to be 0 for the first epoch
-            if self.step_lr_on == "epochs":
-                curr_lr = round(optimizer.state_dict()["param_groups"][0]["lr"], 6)
-                self.learning_rate.append(curr_lr)
-            
             epoch_loss.append(loss.item())
 
             if (steps) % 10 == 0:
                 # Update the learning rate plot after n steps
-                plot_lr(self.learning_rate, x_label=self.step_lr_on, save_dir=str(self.output_dir))
+                plot_lr(
+                    self.learning_rate,
+                    x_label=self.step_lr_on,
+                    save_dir=str(self.output_dir),
+                )
 
-            if (steps) % 200 == 0:
+            if (steps) % 200 == 0 and curr_lr is not None:
 
                 log.info(
                     "Current learning_rate: %s\n",

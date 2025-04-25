@@ -1,5 +1,7 @@
 from typing import Optional, Union
 
+import numpy as np
+
 import torch
 from torch import nn
 from torch.nn import functional as F
@@ -100,9 +102,15 @@ class Attention(nn.Module):
     flattened
     """
 
-    def __init__(self):
-        """Initialize attention module"""
+    def __init__(self, attn_dropout = 0.0):
+        """Initialize attention module
+        
+        Args:
+            attn_dropout: dropout to apply to the attention scores; this is right 
+                          after softmax and before the weighted sum (attenttion @ v)
+        """
         super().__init__()
+        self.attn_drop = nn.Dropout(attn_dropout)
 
     def forward(
         self,
@@ -126,17 +134,26 @@ class Attention(nn.Module):
         Returns:
            The context vectors (batch_size, seq_len, d_model)
         """
+        #with torch.autocast(enabled=True, dtype=torch.float32, device_type=q.device.type):
         # Used to scale the qk dot product
         sqrt_dim = torch.sqrt(torch.tensor(k.shape[-1]))
 
+        # IMPORTANT: when training ViT with a certain configuration, the matmul operation
+        #            caused an overflow so the product had infs/-infs, ultimately producing
+        #            NaNs in the train loss; this is likely due to a combination of amps 
+        #            fp16 and solver configurations which caused exploding gradients
         # (batch_size, num_heads, q_len, k_len)
-        scores = torch.matmul(q, k.transpose(-2, -1)) / sqrt_dim
+        scores = torch.matmul(q, k.transpose(-2, -1)) / sqrt_dim 
+        
+        if scores.isinf().sum() > 0:
+            breakpoint()
 
         # Mask attention indices if mask is provided; softmax will set -inf to 0
         if mask is not None:
             scores.masked_fill_(mask.view(scores.size()), -float("Inf"))
 
         attention = F.softmax(scores, dim=-1)
+        attention = self.attn_drop(attention)
 
         # Considered the context vectors because it's a weighted sum of the attention scores;
         # this gives a `context` value about an input's location
@@ -170,7 +187,7 @@ class Transformer(nn.Module):
 
         Args:
             input_dim: input embedding size; this is also the output size of MHA
-            depth: number of MHA modules
+            depth: number of MHA modules; this is also the number of transformer encoders or layers
             num_heads: number of heads in each MHA module
             embed_dim: Total dimension of the MHA; embed_dim will be split across
                        num_heads (embed_dim // num_heads)  after it's projected
@@ -330,13 +347,30 @@ class ViT(nn.Module):
         x += self.pos_embedding[:, : self.num_patches + 1]  # TODO check the dim
 
         x = self.dropout(x)
+        
+        #print(f"\n\nx tensor before transformer encoder: {x}")
+        if x.isnan().sum() > 0:
+            np.savetxt("tens_before_transformer.txt", x.clone().detach().cpu().numpy())
+        
 
         # Stack of ViT transformer encoders
         x = self.transformer_encoder(x)
 
+        #print(f"\n\nx tensor after transformer encoder: {x}")
+        if x.isnan().sum() > 0:
+            np.savetxt("tens_after_transformer.txt", x.clone().detach().cpu().numpy())
+
+
         # Extract the extra cls token or use global average pooling to make the final
         # class prediction; I believe the class token is used most often
+        # TODO: add the cls token shape
         x = x.mean(dim=1) if self.pool == "mean" else x[:, 0]
+        
+        #print(f"\n\nx: cls shape {x.shape}")
+        #print(f"x: cls token {x}")
+        if x.isnan().sum() > 0:
+            np.savetxt("cls_token_tens", x.clone().detach().cpu().numpy())
+            
 
         # Classification prediction
         x = self.mlp_head(x)

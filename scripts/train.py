@@ -68,7 +68,7 @@ def main(base_config_path: str, model_config_path: str):
     # Apply reproducibility seeds
     reproduce.reproducibility(**base_config["reproducibility"])
 
-    # Extract solver config
+    # Extract solver config parameters
     solver_config = solver_configs[base_config["train"]["solver_config"]]()
 
     if dev_mode:
@@ -80,7 +80,7 @@ def main(base_config_path: str, model_config_path: str):
     batch_size = solver_config.training.batch_size
     effective_bs = solver_config.training.effective_batch_size
     epochs = solver_config.training.epochs
-    
+
     val_batch_size = solver_config.validation.batch_size
 
     # Set gpu parameters
@@ -153,7 +153,7 @@ def main(base_config_path: str, model_config_path: str):
     classifier_name = model_config["classifier"]["name"]
     if "vit" in classifier_name:
         classifier_params = {
-            "image_size": 224,
+            "image_size": 64, #224,
             "num_classes": dataset_train.num_classes,
             **model_config["params"],
         }
@@ -204,7 +204,7 @@ def main(base_config_path: str, model_config_path: str):
         "optimizer": optimizer,
         "scheduler": lr_scheduler,
         "grad_accum_steps": grad_accum_steps,
-        "max_norm": solver_config.training.max_norm,
+        "max_norm": base_config["train"]["max_norm"],
         "start_epoch": 1,
         "epochs": epochs,
         "ckpt_epochs": train_args["ckpt_epochs"],

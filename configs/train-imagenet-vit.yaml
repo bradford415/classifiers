@@ -3,7 +3,7 @@
 
 # Whether to run in development/debugging mode; this only uses a few samples in in the train/val dataset
 # to quickly run the code as well as sets num_workers=0
-dev_mode: True
+dev_mode: False
 
 # Base directory for output files; do not change this 
 output_dir: "output/train"
@@ -19,10 +19,13 @@ log_train_steps: 60
 
 # Parameters for the dataset class
 dataset:
-
+ 
   # Path to the root of the dataset; detects which path to use based on device
   root: "/mnt/d/datasets/imagenet" # linux/windows path
   root_mac: "/Users/bsele/datasets/imagenet-2012" # mac path
+
+  # The image size to resize and crop images to; e.g., 224 = 224x224
+  image_size: 224
 
   # Number of CPU processes the next sample in the dataset; use 0 to only use the main process
   num_workers: 4
@@ -32,12 +35,41 @@ train:
   # See solvers.config for available configs
   solver_config: "vit_b16_imagenet_config"
 
+  max_norm: 1.0
+  
+  # batches & epochs
+  batch_size: 1024
+  effective_batch_size: 1024  # batch_size * gradient_accumulation_steps
+  validation_batch_size: 512
+  epochs: 300
+
   # Number of epochs to checkpoint after; use 'null' to turn off checkpointing
   ckpt_epochs: 5
 
   # Path of weights file (.pt) to resume training; 
   # use `null` to train a new model from scratch
   checkpoint_path:
+
+# solver params: optimzer, lr scheduler, etc.
+sovler:
+
+  optimizer:
+    # The optimizer to use; must be one of the names in the optimizer_map dict
+    name: "adamw"
+    
+    params:
+      lr: 0.001
+      weight_decay: 0.05
+
+  lr_scheduler:
+    name: "warmup_cosine_decay"
+    step_lr_on: "epochs" # step the lr after n "epochs" or "steps"
+    
+    params:
+      warmup_epochs: 5 # linear warmup for this many epochs
+      warmup_min_lr: 1e-6
+      # Note: total_steps is set by number of epochs
+
 
 # GPU parameters
 cuda:

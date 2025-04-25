@@ -3,6 +3,7 @@ import ml_collections
 __all__ = ["resnet50_imagenet_config", "vit_b16_imagenet_config"]
 
 
+# NOTE: still deciding if I want to use ml_collections or just a config file
 def vit_b16_imagenet_config():
     """Returns the ViT-B/16 configuration.
 
@@ -17,7 +18,7 @@ def vit_b16_imagenet_config():
 
     # Training-related parameters
     config.training = ml_collections.ConfigDict()
-    config.training.batch_size = 64
+    config.training.batch_size = 512
     config.training.effective_batch_size = (
         1024  # batch_size * gradient_accumulation_steps
     )
@@ -26,7 +27,7 @@ def vit_b16_imagenet_config():
 
     # Validation-related parameters
     config.validation = ml_collections.ConfigDict()
-    config.validation.batch_size = 64
+    config.validation.batch_size = 512
 
     # Optimizer params
     config.optimizer = ml_collections.ConfigDict()
@@ -40,6 +41,7 @@ def vit_b16_imagenet_config():
     config.lr_scheduler.name = "warmup_cosine_decay"
     config.lr_scheduler.warmup_steps = 5
     config.lr_scheduler.total_steps = config.training.epochs  # total number of epochs
+    config.lr_scheduler.warmup_min_lr = 2e-4#1e-6
 
     return config
 

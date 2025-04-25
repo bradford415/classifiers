@@ -34,6 +34,8 @@ class ImageNet(datasets.ImageFolder):
         # TODO: work on dev mode
         if dev_mode:
             self.samples = self.samples[:256]
+         
+        self.samples = self.samples[:10000]
 
 
 def make_imagenet_transforms(dataset_split):
@@ -46,6 +48,7 @@ def make_imagenet_transforms(dataset_split):
         dataset_split: which dataset split to use; `train` or `val`
 
     """
+    img_size = 64 #224
 
     normalize = T.Compose(
         [T.ToTensor(), T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])]
@@ -55,7 +58,7 @@ def make_imagenet_transforms(dataset_split):
         return T.Compose(
             [
                 T.RandomResizedCrop(
-                    224
+                    img_size
                 ),  # 224 is commonly used to pretrain classifiers
                 T.RandomHorizontalFlip(p=0.5),
                 normalize,
@@ -65,7 +68,7 @@ def make_imagenet_transforms(dataset_split):
         return T.Compose(
             [
                 T.Resize(256),
-                T.CenterCrop(224),
+                T.CenterCrop(img_size),
                 normalize,
             ]
         )
