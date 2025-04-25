@@ -130,7 +130,7 @@ def main(base_config_path: str, model_config_path: str):
         train_kwargs.update(gpu_kwargs)
         val_kwargs.update(gpu_kwargs)
 
-    dataset_kwargs = {"root": base_config["dataset"]["root"]}
+    dataset_kwargs = {"root": base_config["dataset"]["root"], "image_size": base_config["dataset"]["image_size"]}
     dataset_train = dataset_map[base_config["dataset_name"]](
         dataset_split="train", dev_mode=dev_mode, **dataset_kwargs
     )
@@ -172,7 +172,7 @@ def main(base_config_path: str, model_config_path: str):
     reproduce.model_info(model)
 
     model.to(device)
-    criterion = nn.CrossEntropyLoss().to(device)
+    criterion = nn.CrossEntropyLoss()
 
     log.info("\nclassifier: %s", model_config["classifier"]["name"])
 
