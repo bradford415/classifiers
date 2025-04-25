@@ -146,7 +146,8 @@ class Attention(nn.Module):
         scores = torch.matmul(q, k.transpose(-2, -1)) / sqrt_dim 
         
         if scores.isinf().sum() > 0:
-            breakpoint()
+            print("Inf detected in scores of Attentnion")
+            raise RuntimeError()
 
         # Mask attention indices if mask is provided; softmax will set -inf to 0
         if mask is not None:
@@ -358,6 +359,8 @@ class ViT(nn.Module):
 
         #print(f"\n\nx tensor after transformer encoder: {x}")
         if x.isnan().sum() > 0:
+            print("Nans detected ahhh")
+            
             np.savetxt("tens_after_transformer.txt", x.clone().detach().cpu().numpy())
 
 
