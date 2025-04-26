@@ -1,7 +1,7 @@
 # Classifiers
-The goal of this repository is to 
+The goal of this repository is to: 
 * Implement powerful classifiers and understand their architecture so they can be used as backbones for other downstream tasks
-* test and understand various components of deep learning (e.g., learning rate schedulers) so they can be applied to more advanced tasks
+* Test and understand various components of deep learning (e.g., learning rate schedulers)
 
 ## Training a model
 This project is designed to use the configuration specified in `configs/`, but for ease of use the CLI arguments specified below will overwrite the main default config parameters for quick setup.
