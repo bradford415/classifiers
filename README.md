@@ -34,3 +34,9 @@ After running the download script, the ImageNet dataset will be organized as sho
 | Classifier | Pretrained | Dataset            | Accuracy (top 1) / Epoch |
 |------------|------------|--------------------|--------------------------|
 | ResNet50   | Scratch    | ImageNet-1k (2012) | 74.9% / 96               |
+
+## Visuals
+# Learning rate schedulers
+Visuals of the learning rate schedulers to get an intuitive idea of how they work in practice.
+TODO Warmup cosine decay
+
