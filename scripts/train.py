@@ -1,8 +1,7 @@
 import datetime
 import logging
-from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional
 
 import torch
 import yaml
@@ -11,9 +10,8 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from classifiers.dataset.imagenet import build_imagenet
-from classifiers.evaluate import topk_accuracy
-from classifiers.models import create_vit, darknet53, resnet50
-from classifiers.solvers import solver_configs
+from classifiers.models import create_vit, resnet50
+from classifiers.solvers import solver_configs # TODO: decouple from this
 from classifiers.solvers.build import build_solvers
 from classifiers.trainer import Trainer
 from classifiers.utils import reproduce
@@ -37,12 +35,36 @@ def main(base_config_path: str, model_config_path: str):
         model_config_path: path to the detection model configuration file
 
     """
+def main(
+    base_config_path: str = "configs/train-imagenet-vit.yaml",
+    model_config_path: str = "configs/vit/vit-base-16.yaml",
+    dataset_root: Optional[str] = None,
+    backbone_weights: Optional[str] = None,
+    checkpoint_path: Optional[str] = None,
+):
+    """Entrypoint for the project
+
+    Args:
+        base_config_path: path to the desired training configuration file; by default the train-imagenet-vit.yaml file is used which
+                          trains from scratch (i.e., no pretrained backbone weights)
+        model_config_path: path to the classifier model configuration file; by default the ViT-B/16 model
+        dataset_root: path to the the root directory of the dataset
+        checkpoint_path: path to the weights of the classifier model; this can be used to resume training or inference;
+    """
     # Load configuration files
     with open(base_config_path, "r") as f:
         base_config = yaml.safe_load(f)
 
     with open(model_config_path, "r") as f:
         model_config = yaml.safe_load(f)
+        
+        
+    # Override configuration parameters if CLI arguments are provided; this allows external users
+    # to easily run the project without messing with the configuration files
+    if dataset_root is not None:
+        base_config["dataset"]["root"] = dataset_root
+    if checkpoint_path is not None:
+        base_config["train"]["checkpoint_path"] = checkpoint_path
 
     dev_mode = base_config["dev_mode"]
 
