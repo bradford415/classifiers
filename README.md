@@ -13,7 +13,7 @@ python scripts/train.py configs/train-imagenet-vit.yaml configs/vit/vit-base-16.
 
 ### Resume training from a checkpoint
 ```bash
-TODO
+python scripts/train.py --dataset_root "/mnt/d/datasets/imagenet" --checkpoint_path "/path/to/checkpoint_weights.pt"
 ```
 
 ## Datasets
