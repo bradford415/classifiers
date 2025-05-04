@@ -8,13 +8,13 @@ from torch.nn import functional as F
 
 
 class MultiheadAttention(nn.Module):
-    """Multiheaded attention module used in ViT.
+    """Multiheaded self-attention module used in ViT.
 
     This is pretty much the same as the original MHA except the layernorm
     is at the start of the module rather than after the residual connection
     """
 
-    def __init__(self, input_dim, embed_dim, num_heads):
+    def __init__(self, input_dim, embed_dim, num_heads, attn_dropout=0.0):
         """TODO
 
         NOTE: some MHA implementations allow you to specify the input dimensions to qkv and have
@@ -23,9 +23,12 @@ class MultiheadAttention(nn.Module):
         Args:
             input_dim: input dim size for the queries, keys, and values; this is also
                        the final output dim size after the linear projection
-            embed_dim: Total dimension of the model; embed_dim will be split across
-                       num_heads (embed_dim // num_heads)  after it's projected
+            embed_dim: Total dimension of attention; qkv will projected to embed_dim then
+                       will be split across num_heads (embed_dim // num_heads)
             num_heads: Number of attention heads; each head will have dimension of attention_dim // num_heads
+            attn_dropout: dropout to apply to the attention scores; this is right 
+                          after softmax and before the weighted sum (attenttion @ v) in the
+                          Attention module
 
         Returns:
             Linear projected attention values (batch, seq_len, embed_dim)
@@ -42,28 +45,35 @@ class MultiheadAttention(nn.Module):
         #       but ViT uses layernorm right before MHA and the MLP
         self.norm = nn.LayerNorm(embed_dim)
 
-        self.q_proj = nn.Linear(input_dim, embed_dim, bias=False)
-        self.k_proj = nn.Linear(input_dim, embed_dim, bias=False)
-        self.v_proj = nn.Linear(input_dim, embed_dim, bias=False)
+        self.qkv_proj = nn.Linear(input_dim, embed_dim * 3, bias=False)
+        # self.q_proj = nn.Linear(input_dim, embed_dim, bias=False)
+        # self.k_proj = nn.Linear(input_dim, embed_dim, bias=False)
+        # self.v_proj = nn.Linear(input_dim, embed_dim, bias=False)
 
-        self.attention = Attention()
+        self.attention = Attention(attn_dropout=attn_dropout)
 
         self.linear_proj = nn.Linear(embed_dim, input_dim, bias=False)
 
-    def forward(self, queries: torch.Tensor, keys: torch.Tensor, values: torch.Tensor):
-        """Forward pass through Multiheaded Attention;
+    def forward(self, qkv):#queries: torch.Tensor, keys: torch.Tensor, values: torch.Tensor):
+        """Forward pass through Multiheaded Self-Attention;
         for self-attention the queries, keys, and values should be the same
 
         Args:
+            qkv: a single nnput tensor to compute the multiheaded self-attention of; this tensor
+                 will be linearly projected to embed_dim*3 and then split into q, k, v 
             queries: Input tensor to compute the attention of
             keys: Input tensor to compute the attention of
             values: Input tensor to compute the context of; for self-attention this should be the same
                     as q & v
         """
+        qkv = self.norm(qkv)
+        
+        queries, keys, values = self.qkv_proj(qkv).chunk(3, dim=-1)
+        
         # Linearly project q, k, & v (batch, seq_len, embed_dim)
-        queries = self.q_proj(queries)
-        keys = self.k_proj(keys)
-        values = self.v_proj(values)
+        # queries = self.q_proj(queries)
+        # keys = self.k_proj(keys)
+        # values = self.v_proj(values)
 
         # Split into heads (batch, num_heads, seq_len, head_dim)
         query_heads = queries.view(
@@ -138,10 +148,6 @@ class Attention(nn.Module):
         # Used to scale the qk dot product
         sqrt_dim = torch.sqrt(torch.tensor(k.shape[-1]))
 
-        # IMPORTANT: when training ViT with a certain configuration, the matmul operation
-        #            caused an overflow so the product had infs/-infs, ultimately producing
-        #            NaNs in the train loss; this is likely due to a combination of amps 
-        #            fp16 and solver configurations which caused exploding gradients
         # (batch_size, num_heads, q_len, k_len)
         scores = torch.matmul(q, k.transpose(-2, -1)) / sqrt_dim 
         
@@ -218,7 +224,8 @@ class Transformer(nn.Module):
         """TODO"""
         # Sequentially loop through all encoders and add the residual after mha and ff
         for mha, ff in self.layers:
-            x = mha(x, x, x) + x
+            #x = mha(x, x, x) + x
+            x = mha(x) + x
             x = ff(x) + x
 
         return self.norm(x)
@@ -248,7 +255,7 @@ class ViT(nn.Module):
 
         Args:
             TODO
-            image_size:
+            image_size: the input size to the model; used to compute the number of patches
             patch_size:
             patch_emb_dim: input embedding size to the stack of transformer encoders; image patches
                        will be projected to this size before being passed to the encoders
@@ -257,6 +264,7 @@ class ViT(nn.Module):
             emb_dim: total dimension of the MHA; embed_dim will be split across
                      num_heads (embed_dim // num_heads)  after it's projected
             mlp_dim: dimension on the hidden layer in the MLP after each MHA
+            attention_dropout: 
             emb_dropout: dropout of the embedded patches right before being passed to the transformer encoder
         """
         super().__init__()
@@ -318,7 +326,7 @@ class ViT(nn.Module):
         """
         b, c, h, w = img.shape
 
-        # Convert batch of images to patchs
+        # Convert batch of images to patches
         # (b, c, h, w) -> (b, c, num_p, p_h, num_p, p_w)
         # -> (b, num_p, num_p, p_h, p_w, c) -> (b, num_p, p_h * p_w * c)
         x = (
@@ -348,30 +356,15 @@ class ViT(nn.Module):
         x += self.pos_embedding[:, : self.num_patches + 1]  # TODO check the dim
 
         x = self.dropout(x)
-        
-        #print(f"\n\nx tensor before transformer encoder: {x}")
-        if x.isnan().sum() > 0:
-            np.savetxt("tens_before_transformer.txt", x.clone().detach().cpu().numpy())
-        
 
         # Stack of ViT transformer encoders
-        x = self.transformer_encoder(x)
-
-        #print(f"\n\nx tensor after transformer encoder: {x}")
-        if x.isnan().sum() > 0:
-            print("NaNs detected")
-            #breakpoint()
-
+        x = self.transformer_encoder(x)    
 
         # Extract the extra cls token or use global average pooling to make the final
         # class prediction; I believe the class token is used most often
         # TODO: add the cls token shape
         x = x.mean(dim=1) if self.pool == "mean" else x[:, 0]
-        
-        #print(f"\n\nx: cls shape {x.shape}")
-        #print(f"x: cls token {x}")
-        if x.isnan().sum() > 0:
-            np.savetxt("cls_token_tens", x.clone().detach().cpu().numpy())
+
             
 
         # Classification prediction

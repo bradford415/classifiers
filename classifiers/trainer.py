@@ -26,6 +26,7 @@ class Trainer:
         step_lr_on: str,
         device: torch.device = torch.device("cpu"),
         log_train_steps: int = 20,
+        disable_amp: bool = False,
     ):
         """Constructor for the Trainer class
 
@@ -43,8 +44,11 @@ class Trainer:
 
         self.step_lr_on = step_lr_on
 
-        # mixed precision training not yet supported on mps
-        self.enable_amp = False #True if not self.device.type == "mps" else False
+        if disable_amp:
+            self.enable_amp = False
+        else:
+            # mixed precision training not yet supported on mps
+            self.enable_amp = True if not self.device.type == "mps" else False
 
         # Metrics
         self.learning_rate = []
@@ -316,26 +320,11 @@ class Trainer:
 
                     scaler.step(optimizer)
                     scaler.update()
-                else: # [p.grad for p in model.parameters() if p is not None]
-                total_norm = 0.0
-                    for p in model.parameters():
-                        if p.grad is not None:
-                            param_norm = p.grad.data.norm(2)
-                            total_norm += param_norm.item() ** 2
-                            print(f"pre clip l2 norm of parameters: {total_norm}")
-                    if epoch == 9 and steps == 9:
-                        breakpoint()
+                else:
                     if max_norm is not None:
                         nn.utils.clip_grad_norm_(model.parameters(), max_norm)
                     optimizer.step()
-                total_norm = 0.0
-                for p in model.parameters():
-                    if p.grad is not None:
-                        param_norm = p.grad.data.norm(2)
-                        total_norm += param_norm.item() ** 2
-                print(f"post clip l2 norm of parameters: {total_norm}")
-                if total_norm == 0.0:
-                    breakpoint()
+
                 optimizer.zero_grad()
 
                 curr_lr = round(optimizer.state_dict()["param_groups"][0]["lr"], 8)
@@ -364,7 +353,7 @@ class Trainer:
                     save_dir=str(self.output_dir),
                 )
 
-            if (steps) % 3 == 0 and curr_lr is not None:
+            if (steps) % 60 == 0 and curr_lr is not None:
 
                 log.info(
                     "Current learning_rate: %s\n",

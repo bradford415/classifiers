@@ -5,6 +5,9 @@
 # to quickly run the code as well as sets num_workers=0
 dev_mode: False
 
+# using amp is determined by device but one can override it here; True = disable amp
+disable_amp: False
+
 # Base directory for output files; do not change this 
 output_dir: "output/train"
 
@@ -38,17 +41,17 @@ train:
   max_norm: 1.0
   
   # batches & epochs
-  batch_size: 1024
+  batch_size: 32
   effective_batch_size: 1024  # batch_size * gradient_accumulation_steps
-  validation_batch_size: 512
+  validation_batch_size: 32
   epochs: 300
 
   # Number of epochs to checkpoint after; use 'null' to turn off checkpointing
-  ckpt_epochs: 5
+  ckpt_epochs: 15
 
   # Path of weights file (.pt) to resume training; 
   # use `null` to train a new model from scratch
-  checkpoint_path:
+  checkpoint_path: #"/home/bselee/programming/classifiers/output/train/development/2025_04_25-07_53_49_PM/checkpoints/best_acc1_62-95.pt"
 
 # solver params: optimzer, lr scheduler, etc.
 sovler:
@@ -56,7 +59,7 @@ sovler:
   optimizer:
     # The optimizer to use; must be one of the names in the optimizer_map dict
     name: "adamw"
-    
+
     params:
       lr: 0.001
       weight_decay: 0.05

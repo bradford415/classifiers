@@ -37,7 +37,7 @@ def build_solvers(
     optimizer_name = optimizer_params["name"]
     scheduler_name = scheduler_params["name"]
 
-    # Delete name key so we can easily unpack the parameters
+    # TODO: use a parameters field instead of this; Delete name key so we can easily unpack the parameters
     del optimizer_params["name"]
     del scheduler_params["name"]
 

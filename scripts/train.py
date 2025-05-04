@@ -67,9 +67,22 @@ def main(base_config_path: str, model_config_path: str):
 
     # Apply reproducibility seeds
     reproduce.reproducibility(**base_config["reproducibility"])
-
-    # Extract solver config parameters
+    
+    # Extract solver config parameters; TODO: decouple from solver
     solver_config = solver_configs[base_config["train"]["solver_config"]]()
+    
+    # Save configuration files and parameters
+    reproduce.save_configs(
+        config_dicts=[
+            (base_config, "base_config.yaml"),
+            (model_config, "model_config.yaml"),
+        ],
+        solver_dict=(solver_config.to_dict(), "solver_config.json"),
+        output_path=output_path / "reproduce",
+    )
+    
+    # Extract the train arguments from base config
+    train_args = base_config["train"]
 
     if dev_mode:
         log.info("NOTE: executing in dev mode")
@@ -77,11 +90,13 @@ def main(base_config_path: str, model_config_path: str):
         solver_config.validation.batch_size = 2
 
     # Extract training and val params
-    batch_size = solver_config.training.batch_size
-    effective_bs = solver_config.training.effective_batch_size
-    epochs = solver_config.training.epochs
+    batch_size = train_args["batch_size"]
+    effective_bs = train_args["effective_batch_size"]
+    epochs = train_args["epochs"]
 
-    val_batch_size = solver_config.validation.batch_size
+    val_batch_size = train_args["batch_size"]
+    
+    image_size = base_config["dataset"]["image_size"]
 
     # Set gpu parameters
     train_kwargs = {
@@ -130,7 +145,7 @@ def main(base_config_path: str, model_config_path: str):
         train_kwargs.update(gpu_kwargs)
         val_kwargs.update(gpu_kwargs)
 
-    dataset_kwargs = {"root": base_config["dataset"]["root"], "image_size": base_config["dataset"]["image_size"]}
+    dataset_kwargs = {"root": base_config["dataset"]["root"], "image_size": image_size}
     dataset_train = dataset_map[base_config["dataset_name"]](
         dataset_split="train", dev_mode=dev_mode, **dataset_kwargs
     )
@@ -148,12 +163,14 @@ def main(base_config_path: str, model_config_path: str):
         drop_last=True,
         **val_kwargs,
     )
+    
+    log.info("\nusing image size %d\n", image_size)
 
     # Extract initialization parameters for the classifier; TODO create a create classifier function
     classifier_name = model_config["classifier"]["name"]
     if "vit" in classifier_name:
         classifier_params = {
-            "image_size": 64, #224,
+            "image_size": image_size,
             "num_classes": dataset_train.num_classes,
             **model_config["params"],
         }
@@ -176,9 +193,6 @@ def main(base_config_path: str, model_config_path: str):
 
     log.info("\nclassifier: %s", model_config["classifier"]["name"])
 
-    # Extract the train arguments from base config
-    train_args = base_config["train"]
-
     optimizer, lr_scheduler = build_solvers(
         model.parameters(), solver_config.optimizer, solver_config.lr_scheduler
     )
@@ -193,6 +207,7 @@ def main(base_config_path: str, model_config_path: str):
         step_lr_on=solver_config["step_lr_on"],
         device=device,
         log_train_steps=base_config["log_train_steps"],
+        disable_amp=base_config["disable_amp"],
     )
 
     # Build trainer args used for the training
@@ -204,7 +219,7 @@ def main(base_config_path: str, model_config_path: str):
         "optimizer": optimizer,
         "scheduler": lr_scheduler,
         "grad_accum_steps": grad_accum_steps,
-        "max_norm": base_config["train"]["max_norm"],
+        "max_norm": train_args["max_norm"],
         "start_epoch": 1,
         "epochs": epochs,
         "ckpt_epochs": train_args["ckpt_epochs"],

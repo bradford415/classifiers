@@ -36,10 +36,7 @@ class ImageNet(datasets.ImageFolder):
         if dev_mode:
             self.samples = self.samples[:256]
          
-        self.samples = self.samples[:10000]
-
-
-def make_imagenet_transforms(dataset_split: str, image_size: int = 224):
+def make_imagenet_transforms(dataset_split: str, img_size: int = 224):
     """Initialize transforms for the coco dataset
 
     These transforms are based on torchvision transforms but are overrided in data/transforms.py
@@ -49,8 +46,6 @@ def make_imagenet_transforms(dataset_split: str, image_size: int = 224):
         dataset_split: which dataset split to use; `train` or `val`
         image_size: square size of the image to resize/crop to; default is 224
     """
-    img_size = 64 #224
-
     normalize = T.Compose(
         [T.ToTensor(), T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])]
     )
@@ -101,7 +96,7 @@ def build_imagenet(
         images_dir = imagenet_root / "val"
 
     # Create the data augmentation transforms
-    data_transforms = make_imagenet_transforms(dataset_split, image_size=image_size)
+    data_transforms = make_imagenet_transforms(dataset_split, img_size=image_size)
 
     dataset = ImageNet(
         image_folder=images_dir,

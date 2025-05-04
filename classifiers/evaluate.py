@@ -78,7 +78,7 @@ def load_model_checkpoint(
         lr_scheduler: the learning rate scheduler used during training
 
     Returns:
-        the epoch to start training on
+        the epoch to resume training on
     """
     # Load the torch weights
     weights = torch.load(checkpoint_path, map_location=device, weights_only=True)
