@@ -357,18 +357,16 @@ class ViT(nn.Module):
 
         x = self.dropout(x)
 
-        # Stack of ViT transformer encoders
+        # Stack of ViT transformer encoders; (b, num_patches, patch_emb_dim)
         x = self.transformer_encoder(x)    
 
         # Extract the extra cls token or use global average pooling to make the final
         # class prediction; I believe the class token is used most often
-        # TODO: add the cls token shape
+        # single_patch_token_shape (b, patch_emb_dim)
         x = x.mean(dim=1) if self.pool == "mean" else x[:, 0]
 
-            
-
-        # Classification prediction
-        x = self.mlp_head(x)
+        # Classification prediction; (b, num_classes)
+        x = self.mlp_head(x) 
 
         return x
 
