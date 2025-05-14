@@ -46,9 +46,6 @@ class MultiheadAttention(nn.Module):
         self.norm = nn.LayerNorm(embed_dim)
 
         self.qkv_proj = nn.Linear(input_dim, embed_dim * 3, bias=False)
-        # self.q_proj = nn.Linear(input_dim, embed_dim, bias=False)
-        # self.k_proj = nn.Linear(input_dim, embed_dim, bias=False)
-        # self.v_proj = nn.Linear(input_dim, embed_dim, bias=False)
 
         self.attention = Attention(attn_dropout=attn_dropout)
 
@@ -68,12 +65,10 @@ class MultiheadAttention(nn.Module):
         """
         qkv = self.norm(qkv)
         
+        # Linearly project the qkv vector (batch, seq_len, embed_dim*3) and split into 
+        # seperate q, k & v vectors (batch, seq_len, embed_dim)
         queries, keys, values = self.qkv_proj(qkv).chunk(3, dim=-1)
         
-        # Linearly project q, k, & v (batch, seq_len, embed_dim)
-        # queries = self.q_proj(queries)
-        # keys = self.k_proj(keys)
-        # values = self.v_proj(values)
 
         # Split into heads (batch, num_heads, seq_len, head_dim)
         query_heads = queries.view(
@@ -86,7 +81,7 @@ class MultiheadAttention(nn.Module):
             values.shape[0], values.shape[1], self.num_heads, self.head_dim
         ).transpose(1, 2)
 
-        # Compute attention on all heads
+        # Compute attention on all heads (b, num_heads, num_patches+1, head_dim)
         attention = self.attention(query_heads, key_heads, value_heads)
 
         # Combine all the heads together (concatenation step);
@@ -148,12 +143,8 @@ class Attention(nn.Module):
         # Used to scale the qk dot product
         sqrt_dim = torch.sqrt(torch.tensor(k.shape[-1]))
 
-        # (batch_size, num_heads, q_len, k_len)
+        # (batch_size, num_heads, q_len, k_len) (for self-attention q_len=k_len)
         scores = torch.matmul(q, k.transpose(-2, -1)) / sqrt_dim 
-        
-        if scores.isinf().sum() > 0:
-            print("Inf detected in scores of Attentnion")
-            raise RuntimeError()
 
         # Mask attention indices if mask is provided; softmax will set -inf to 0
         if mask is not None:
