@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader
 
 from classifiers.dataset.imagenet import build_imagenet
 from classifiers.models import create_vit, resnet50
-from classifiers.solvers import solver_configs # TODO: decouple from this
+from classifiers.solvers import solver_configs  # TODO: decouple from this
 from classifiers.solvers.build import build_solvers
 from classifiers.trainer import Trainer
 from classifiers.utils import reproduce
@@ -35,6 +35,8 @@ def main(base_config_path: str, model_config_path: str):
         model_config_path: path to the detection model configuration file
 
     """
+
+
 def main(
     base_config_path: str = "configs/train-imagenet-vit.yaml",
     model_config_path: str = "configs/vit/vit-base-16.yaml",
@@ -57,8 +59,7 @@ def main(
 
     with open(model_config_path, "r") as f:
         model_config = yaml.safe_load(f)
-        
-        
+
     # Override configuration parameters if CLI arguments are provided; this allows external users
     # to easily run the project without messing with the configuration files
     if dataset_root is not None:
@@ -89,10 +90,10 @@ def main(
 
     # Apply reproducibility seeds
     reproduce.reproducibility(**base_config["reproducibility"])
-    
+
     # Extract solver config parameters; TODO: decouple from solver
     solver_config = solver_configs[base_config["train"]["solver_config"]]()
-    
+
     # Save configuration files and parameters
     reproduce.save_configs(
         config_dicts=[
@@ -102,7 +103,7 @@ def main(
         solver_dict=(solver_config.to_dict(), "solver_config.json"),
         output_path=output_path / "reproduce",
     )
-    
+
     # Extract the train arguments from base config
     train_args = base_config["train"]
 
@@ -117,7 +118,7 @@ def main(
     epochs = train_args["epochs"]
 
     val_batch_size = train_args["batch_size"]
-    
+
     image_size = base_config["dataset"]["image_size"]
 
     # Set gpu parameters
@@ -185,7 +186,7 @@ def main(
         drop_last=True,
         **val_kwargs,
     )
-    
+
     log.info("\nusing image size %d\n", image_size)
 
     # Extract initialization parameters for the classifier; TODO create a create classifier function

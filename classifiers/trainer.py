@@ -10,8 +10,12 @@ import torch
 from torch import nn
 from torch.utils import data
 
-from classifiers.evaluate import (AverageMeter, evaluate,
-                                  load_model_checkpoint, topk_accuracy)
+from classifiers.evaluate import (
+    AverageMeter,
+    evaluate,
+    load_model_checkpoint,
+    topk_accuracy,
+)
 from classifiers.visualize import plot_acc1, plot_loss, plot_lr
 
 log = logging.getLogger(__name__)
@@ -280,7 +284,7 @@ class Trainer:
 
             with torch.autocast(
                 device_type=self.device.type,
-                dtype=torch.bfloat16,#torch.float16,
+                dtype=torch.bfloat16,  # torch.float16,
                 enabled=self.enable_amp,
             ):
                 # (b, num_classes)
@@ -303,7 +307,7 @@ class Trainer:
             top5.update(acc5[0], samples.shape[0])
 
             # https://github.com/jeonsworld/ViT-pytorch/blob/460a162767de1722a014ed2261463dbbc01196b6/train.py#L198
-            #breakpoint()
+            # breakpoint()
 
             # Calculate and accumulate gradients
             if self.enable_amp:

@@ -1,0 +1,39 @@
+# Configuration file for the classifier swin-B model
+# Filename convention: {classifier_name}-{variant}-.yaml
+#
+# Architecture defined in https://arxiv.org/pdf/2103.14030 Section 3.3
+---
+
+# Classifier parameters
+classifier:
+  # the classifier to train; must exist in classifier_map in train.py
+  name: "swin-B"
+
+# Vision transformer parameters; most parameters defined in ViT paper Table 1
+params:
+  # classification method to use and pass into the final MLP; 'cls' = extra token only, 'mean' = globally average the patches and the token
+  pool: "cls"
+
+  patch_size: 16
+
+  # dim to project the patches to; this is the input_dim for the transformer; I believe ViT paper uses the
+  # the same patch emb dim for the Transformer emb dim but need to check
+  patch_emb_dim: 768
+
+  # The number of transformer encoders to stack; the 'depth' of the model; layers=num_encoders in paper
+  num_encoders: 12
+
+  ## Transformer encoder params 
+  # number of heads in MHA
+  num_heads: 12
+
+  # Total dim of the MHA; emb_dim will be split across num_heads (embed_dim // num_heads) after it's projected;
+  # emb_dim must be divisible by num_heads
+  emb_dim: 768
+
+  # dim of the mlp hidden layer at the end of the transformer encoder
+  mlp_dim: 3072
+
+  attention_dropout: 0.0
+  emb_dropout: 0.0
+

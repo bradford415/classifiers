@@ -41,7 +41,7 @@ def vit_b16_imagenet_config():
     config.lr_scheduler.name = "warmup_cosine_decay"
     config.lr_scheduler.warmup_steps = 5
     config.lr_scheduler.total_steps = config.training.epochs  # total number of epochs
-    config.lr_scheduler.warmup_min_lr = 2e-4#1e-6
+    config.lr_scheduler.warmup_min_lr = 2e-4  # 1e-6
 
     return config
 

@@ -1,7 +1,6 @@
 from typing import Optional, Union
 
-import numpy as np
-
+import numpy as npx
 import torch
 from torch import nn
 from torch.nn import functional as F
@@ -26,7 +25,7 @@ class MultiheadAttention(nn.Module):
             embed_dim: Total dimension of attention; qkv will projected to embed_dim then
                        will be split across num_heads (embed_dim // num_heads)
             num_heads: Number of attention heads; each head will have dimension of attention_dim // num_heads
-            attn_dropout: dropout to apply to the attention scores; this is right 
+            attn_dropout: dropout to apply to the attention scores; this is right
                           after softmax and before the weighted sum (attenttion @ v) in the
                           Attention module
 
@@ -51,24 +50,25 @@ class MultiheadAttention(nn.Module):
 
         self.linear_proj = nn.Linear(embed_dim, input_dim, bias=False)
 
-    def forward(self, qkv):#queries: torch.Tensor, keys: torch.Tensor, values: torch.Tensor):
+    def forward(
+        self, qkv
+    ):  # queries: torch.Tensor, keys: torch.Tensor, values: torch.Tensor):
         """Forward pass through Multiheaded Self-Attention;
         for self-attention the queries, keys, and values should be the same
 
         Args:
             qkv: a single nnput tensor to compute the multiheaded self-attention of; this tensor
-                 will be linearly projected to embed_dim*3 and then split into q, k, v 
+                 will be linearly projected to embed_dim*3 and then split into q, k, v
             queries: Input tensor to compute the attention of
             keys: Input tensor to compute the attention of
             values: Input tensor to compute the context of; for self-attention this should be the same
                     as q & v
         """
         qkv = self.norm(qkv)
-        
-        # Linearly project the qkv vector (batch, seq_len, embed_dim*3) and split into 
+
+        # Linearly project the qkv vector (batch, seq_len, embed_dim*3) and split into
         # seperate q, k & v vectors (batch, seq_len, embed_dim)
         queries, keys, values = self.qkv_proj(qkv).chunk(3, dim=-1)
-        
 
         # Split into heads (batch, num_heads, seq_len, head_dim)
         query_heads = queries.view(
@@ -107,11 +107,11 @@ class Attention(nn.Module):
     flattened
     """
 
-    def __init__(self, attn_dropout = 0.0):
+    def __init__(self, attn_dropout=0.0):
         """Initialize attention module
-        
+
         Args:
-            attn_dropout: dropout to apply to the attention scores; this is right 
+            attn_dropout: dropout to apply to the attention scores; this is right
                           after softmax and before the weighted sum (attenttion @ v)
         """
         super().__init__()
@@ -139,12 +139,12 @@ class Attention(nn.Module):
         Returns:
            The context vectors (batch_size, seq_len, d_model)
         """
-        #with torch.autocast(enabled=True, dtype=torch.float32, device_type=q.device.type):
+        # with torch.autocast(enabled=True, dtype=torch.float32, device_type=q.device.type):
         # Used to scale the qk dot product
         sqrt_dim = torch.sqrt(torch.tensor(k.shape[-1]))
 
         # (batch_size, num_heads, q_len, k_len) (for self-attention q_len=k_len)
-        scores = torch.matmul(q, k.transpose(-2, -1)) / sqrt_dim 
+        scores = torch.matmul(q, k.transpose(-2, -1)) / sqrt_dim
 
         # Mask attention indices if mask is provided; softmax will set -inf to 0
         if mask is not None:
@@ -215,7 +215,7 @@ class Transformer(nn.Module):
         """TODO"""
         # Sequentially loop through all encoders and add the residual after mha and ff
         for mha, ff in self.layers:
-            #x = mha(x, x, x) + x
+            # x = mha(x, x, x) + x
             x = mha(x) + x
             x = ff(x) + x
 
@@ -247,7 +247,7 @@ class ViT(nn.Module):
         Args:
             TODO
             image_size: the input size to the model; used to compute the number of patches
-            patch_size:
+            patch_size: the size of each image patch to split the input image into; e.g., 4 -> size 4x4xc
             patch_emb_dim: input embedding size to the stack of transformer encoders; image patches
                        will be projected to this size before being passed to the encoders
             depth: number of transformer encoders to stack
@@ -255,7 +255,7 @@ class ViT(nn.Module):
             emb_dim: total dimension of the MHA; embed_dim will be split across
                      num_heads (embed_dim // num_heads)  after it's projected
             mlp_dim: dimension on the hidden layer in the MLP after each MHA
-            attention_dropout: 
+            attention_dropout:
             emb_dropout: dropout of the embedded patches right before being passed to the transformer encoder
         """
         super().__init__()
@@ -349,7 +349,7 @@ class ViT(nn.Module):
         x = self.dropout(x)
 
         # Stack of ViT transformer encoders; (b, num_patches, patch_emb_dim)
-        x = self.transformer_encoder(x)    
+        x = self.transformer_encoder(x)
 
         # Extract the extra cls token or use global average pooling to make the final
         # class prediction; I believe the class token is used most often
@@ -357,7 +357,7 @@ class ViT(nn.Module):
         x = x.mean(dim=1) if self.pool == "mean" else x[:, 0]
 
         # Classification prediction; (b, num_classes)
-        x = self.mlp_head(x) 
+        x = self.mlp_head(x)
 
         return x
 

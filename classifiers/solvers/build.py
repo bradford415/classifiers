@@ -2,9 +2,11 @@ from collections.abc import Iterable
 
 import torch
 
-from classifiers.solvers.schedulers import (make_cosine_anneal,
-                                            reduce_lr_on_plateau,
-                                            warmup_cosine_decay)
+from classifiers.solvers.schedulers import (
+    make_cosine_anneal,
+    reduce_lr_on_plateau,
+    warmup_cosine_decay,
+)
 
 optimizer_map = {
     "adam": torch.optim.Adam,

@@ -35,7 +35,8 @@ class ImageNet(datasets.ImageFolder):
         # TODO: work on dev mode
         if dev_mode:
             self.samples = self.samples[:256]
-         
+
+
 def make_imagenet_transforms(dataset_split: str, img_size: int = 224):
     """Initialize transforms for the coco dataset
 
