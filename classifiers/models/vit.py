@@ -318,7 +318,7 @@ class ViT(nn.Module):
         b, c, h, w = img.shape
 
         # Convert batch of images to patches
-        # (b, c, h, w) -> (b, c, num_p, p_h, num_p, p_w)
+        # (b, c, h, w) -> (b, c, num_p, p_h, num_p, p_w) NOTE: patches are created like this so they're spatial (not row by row)
         # -> (b, num_p, num_p, p_h, p_w, c) -> (b, num_p, p_h * p_w * c)
         x = (
             img.reshape(
