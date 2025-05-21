@@ -1,0 +1,34 @@
+# Configuration file for the classifier swin-B model
+# Filename convention: {classifier_name}-{variant}-.yaml
+# 
+# Architecture defined in https://arxiv.org/pdf/2103.14030 Section 3.3
+---
+
+# Classifier parameters
+classifier:
+  # the classifier to train; must exist in classifier_map in train.py
+  name: "swin-b"
+
+# Swin transformer parameters
+params:
+  # classification method to use and pass into the final MLP; 'cls' = extra token only, 'mean' = globally average the patches and the token
+  pool: "cls"
+
+  # the spatial size of the patch; 4 -> 4x4 patch size
+  patch_size: 4
+
+  # whether to normalize after the patch embedding
+  patch_norm: True
+
+  # patch embedding dimension and input dimension to each swin layer;
+  # patches are created through Conv2D so patch_emb_dim is the number of filters
+  patch_emb_dim: 128
+
+  # Dropout to use for the relative postion embeddings and TODO something w/ BasicLayer
+  dropout: 0.0
+
+  # TODO
+  depths: [2, 2, 18, 2]
+
+  # TODO
+  num_heads: 12

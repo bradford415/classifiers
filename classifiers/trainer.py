@@ -296,9 +296,6 @@ class Trainer:
                     # Scale the loss by the number of accumulation steps to average the gradients
                     loss = loss / grad_accum_steps
 
-                # if torch.isnan(loss):
-                #     breakpoint()
-
             acc1, acc5 = topk_accuracy(preds, targets, topk=(1, 5))
             losses.update(
                 loss.item(), samples.shape[0]
