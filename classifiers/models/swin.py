@@ -225,8 +225,8 @@ def build_swin(num_classes: int, swin_params: dict[str, any]):
         drop_path_rate=swin_params["attn_drop_rate"],
         norm_layer=layernorm,
         ape=swin_params["ape"],
-        # SSSSSTART HEre!!! finish unpacking and initalize model
-        patch_norm: bool = True,
-        use_checkpoint: bool = False,
-        fused_window_process: bool = False,,
+        patch_norm=swin_params["patch_norm"],
+        use_checkpoint=swin_params["use_activation_checkpointing"],
+        #### start here, run og swin transformer code and see if this is used
+        fused_window_process: bool = False,
         )

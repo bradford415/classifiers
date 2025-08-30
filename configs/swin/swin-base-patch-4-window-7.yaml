@@ -41,9 +41,17 @@ params:
   # dropout for the attention weight
   attn_drop: 0.0
 
-  # TODO; 
+  # TODO; comment
   # TODO: this seems to be the config with the highest drop path rate, might need explore this
   drop_path_rate: 0.5
 
   # TODO
   ape: False
+
+  # TODO:
+  patch_norm: True
+
+  # whether to use activation checkpointing to save memory
+  use_activation_checkpointing: False
+
+
