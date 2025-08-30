@@ -10,8 +10,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from classifiers.dataset.imagenet import build_imagenet
-from classifiers.models import create_vit, resnet50
-from classifiers.solvers import solver_configs  # TODO: decouple from this
+from classifiers.models.create import create_classifier
 from classifiers.solvers.build import build_solvers
 from classifiers.trainer import Trainer
 from classifiers.utils import reproduce
@@ -91,8 +90,20 @@ def main(
     # Apply reproducibility seeds
     reproduce.reproducibility(**base_config["reproducibility"])
 
-    # Extract solver config parameters; TODO: decouple from solver
-    solver_config = solver_configs[base_config["train"]["solver_config"]]()
+    # NOTE: in the official Swin code, they scale the LR when performing gradient accumulation;
+    #       I'm pretty sure since we scale the loss by num_grad_accum_steps we do not need
+    #       to scale the lr at all
+
+    # Extract solver configs and build the solvers; parameter strategy craetes the parameter dicts for the
+    # optimizer (default: "all" use all parameters in the model in one group)
+    solver_config = base_config["solver"]
+    optimizer, lr_scheduler = build_solvers(
+        model,
+        solver_config["optimizer"],
+        solver_config["lr_scheduler"],
+        parameter_strategy=solver_config.get("parameter_strategy", "all"),
+        backbone_lr=solver_config["optimizer"].get("backbone_lr", None),
+    )
 
     # Save configuration files and parameters
     reproduce.save_configs(
@@ -206,7 +217,11 @@ def main(
         ValueError("classifier not recognized.")
 
     # Initalize classifier
-    model = classifier_map[classifier_name](**classifier_params)
+    classifier_name = model_config["classifier"]
+    classifier_params = model_config["params"]
+    model = create_classifier(
+        classifier_name=classifier_name, classifier_args=classifier_params
+    )
 
     # Compute and log the number of params in the model
     reproduce.model_info(model)

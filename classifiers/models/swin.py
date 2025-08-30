@@ -109,7 +109,6 @@ class SwinTransformer(nn.Module):
         patch_norm: bool = True,
         use_checkpoint: bool = False,
         fused_window_process: bool = False,
-        **kwargs  # TODO: remove
     ):
         """Initializes the SwinTransformer
 
@@ -152,7 +151,7 @@ class SwinTransformer(nn.Module):
 
         self.pos_drop == nn.Dropout(dropout)
 
-        # Stochastic depth
+        # Stochastic depth; TODO comment more what this does
         dpr = [
             x.item() for x in torch.linspace(0, drop_path_rate, sum(depths))
         ]  # stochastic depth decay rule
@@ -164,7 +163,7 @@ class SwinTransformer(nn.Module):
             # layer dim doubles every layer i.e., [128, 256, 512, 1024]
             dim = int(patch_emb_dim * 2**layer_i)
 
-            # layer spatial resolution halves every layer 
+            # layer spatial resolution halves every layer
             # for input (224, 224) num_patches = 56 i.e., [(56, 56), (28, 28), (14, 14), (7, 7)]
             input_res = (
                 (
@@ -173,6 +172,8 @@ class SwinTransformer(nn.Module):
                 ),
             )
 
+            breakpoint()
+            ###### START HERE
             # TODO: understand and comment
             drop_path = dpr[sum(depths[:layer_i]) : sum(depths[: layer_i + 1])]
 
@@ -195,3 +196,37 @@ class SwinTransformer(nn.Module):
                 fused_window_process=fused_window_process,
             )
             self.layers.append(layer)
+
+
+def build_swin(num_classes: int, swin_params: dict[str, any]):
+    """Initalize the Swin Transformer model
+    
+    Args:
+        num_classes: number of unique classes in the dataset ontology;
+        swin_params: dictionary of parameters used to intialize the swin transformer with
+    """
+
+    layernorm = nn.LayerNorm
+
+    swin_model = SwinTransformer(
+        img_size=swin_params["img_size"],
+        patch_size=swin_params["patch_size"],
+        in_chans = 3, # for RGB images
+        num_classes = num_classes,
+        patch_emb_dim=swin_params["patch_emb_dim"],
+        depths=swin_params["depths"], 
+        num_heads=swin_params["num_heads"],
+        window_size=swin_params["window_size"],
+        mlp_ratio=swin_params["mlp_ratio"]
+        qkv_bias = True,
+        qk_scale=None,
+        dropout=swin_params["dropout"],
+        attn_drop_rate=swin_params["attn_drop"],
+        drop_path_rate=swin_params["attn_drop_rate"],
+        norm_layer=layernorm,
+        ape=swin_params["ape"],
+        # SSSSSTART HEre!!! finish unpacking and initalize model
+        patch_norm: bool = True,
+        use_checkpoint: bool = False,
+        fused_window_process: bool = False,,
+        )

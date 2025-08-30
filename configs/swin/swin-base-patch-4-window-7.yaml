@@ -1,13 +1,11 @@
 # Configuration file for the classifier swin-B model
-# Filename convention: {classifier_name}-{variant}-.yaml
+# Filename convention: {classifier_name}-{variant}-{modifiers}.yaml
 # 
 # Architecture defined in https://arxiv.org/pdf/2103.14030 Section 3.3
 ---
 
-# Classifier parameters
-classifier:
-  # the classifier to train; must exist in classifier_map in train.py
-  name: "swin-b"
+# the classifier to train
+classifier: "swin-b"
 
 # Swin transformer parameters
 params:
@@ -17,6 +15,10 @@ params:
   # the spatial size of the patch; 4 -> 4x4 patch size
   patch_size: 4
 
+  # the number of square patches in the window; attention is computed locally within
+  # these windows; e.g., 7 = 7x7 patches in a window
+  window_size: 7
+
   # whether to normalize after the patch embedding
   patch_norm: True
 
@@ -24,11 +26,24 @@ params:
   # patches are created through Conv2D so patch_emb_dim is the number of filters
   patch_emb_dim: 128
 
-  # Dropout to use for the relative postion embeddings and TODO something w/ BasicLayer
-  dropout: 0.0
-
   # TODO
   depths: [2, 2, 18, 2]
 
   # TODO
-  num_heads: 12
+  num_heads: [4, 8, 16, 32]
+
+  # TODO
+  mlp_ratio: 4.0
+
+  # Dropout to use for the relative postion embeddings and TODO something w/ BasicLayer
+  dropout: 0.0
+  
+  # dropout for the attention weight
+  attn_drop: 0.0
+
+  # TODO; 
+  # TODO: this seems to be the config with the highest drop path rate, might need explore this
+  drop_path_rate: 0.5
+
+  # TODO
+  ape: False
