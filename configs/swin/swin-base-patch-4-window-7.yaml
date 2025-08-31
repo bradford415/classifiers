@@ -26,7 +26,7 @@ params:
   # patches are created through Conv2D so patch_emb_dim is the number of filters
   patch_emb_dim: 128
 
-  # TODO
+  # number of transformer blocks in each stage of swin
   depths: [2, 2, 18, 2]
 
   # TODO
@@ -37,12 +37,18 @@ params:
 
   # Dropout to use for the relative postion embeddings and TODO something w/ BasicLayer
   dropout: 0.0
-  
-  # dropout for the attention weight
-  attn_drop: 0.0
 
-  # TODO; comment
-  # TODO: this seems to be the config with the highest drop path rate, might need explore this
+  # dropout for the attention weight
+  attn_dropout: 0.0
+
+  # the maximum probability for stochastic depth; this is the probability of randomly skipping an
+  # entire residual branch in a block during training which acts as a form of regularization;
+  # this means that in a residual connection [x + F(x)], the probability that F(x) is skipped 
+  # (multiplied by 0);
+  # this follows a decay rule linspace(0, drop_path_rate, num_blocks) so every swin block has a 
+  # probablity of the residual being skipped; the earlier layers have a lower probablity and the
+  # later layers have a higher probability;
+  # described in Section A2.1 in the paper
   drop_path_rate: 0.5
 
   # TODO

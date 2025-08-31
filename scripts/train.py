@@ -15,11 +15,6 @@ from classifiers.solvers.build import build_solvers
 from classifiers.trainer import Trainer
 from classifiers.utils import reproduce
 
-classifier_map: Dict[str, Any] = {
-    "vit-b16": create_vit,
-    "resnet50": resnet50,
-}
-
 dataset_map: Dict[str, Any] = {"ImageNet": build_imagenet}
 
 # Initialize the root logger
@@ -94,24 +89,12 @@ def main(
     #       I'm pretty sure since we scale the loss by num_grad_accum_steps we do not need
     #       to scale the lr at all
 
-    # Extract solver configs and build the solvers; parameter strategy craetes the parameter dicts for the
-    # optimizer (default: "all" use all parameters in the model in one group)
-    solver_config = base_config["solver"]
-    optimizer, lr_scheduler = build_solvers(
-        model,
-        solver_config["optimizer"],
-        solver_config["lr_scheduler"],
-        parameter_strategy=solver_config.get("parameter_strategy", "all"),
-        backbone_lr=solver_config["optimizer"].get("backbone_lr", None),
-    )
-
     # Save configuration files and parameters
     reproduce.save_configs(
         config_dicts=[
             (base_config, "base_config.yaml"),
             (model_config, "model_config.yaml"),
         ],
-        solver_dict=(solver_config.to_dict(), "solver_config.json"),
         output_path=output_path / "reproduce",
     )
 
@@ -120,8 +103,9 @@ def main(
 
     if dev_mode:
         log.info("NOTE: executing in dev mode")
-        solver_config.training.batch_size = 2
-        solver_config.validation.batch_size = 2
+        train_args["batch_size"] = 2
+        train_args["effective_batch_size"] = 4
+        train_args["validation_batch_size"] = 2
 
     # Extract training and val params
     batch_size = train_args["batch_size"]
@@ -200,28 +184,17 @@ def main(
 
     log.info("\nusing image size %d\n", image_size)
 
-    # Extract initialization parameters for the classifier; TODO create a create classifier function
-    classifier_name = model_config["classifier"]["name"]
-    if "vit" in classifier_name:
-        classifier_params = {
-            "image_size": image_size,
-            "num_classes": dataset_train.num_classes,
-            **model_config["params"],
-        }
-    elif "resnet" in classifier_name:
-        classifier_params = {
-            "num_classes": dataset_train.num_classes,
-            **model_config["params"],
-        }
-    else:
-        ValueError("classifier not recognized.")
+    image_size = base_config["dataset"].get("image_size")
 
     # Initalize classifier
     ##### start here, run code and initalize model so we can step through it
     classifier_name = model_config["classifier"]
     classifier_params = model_config["params"]
     model = create_classifier(
-        classifier_name=classifier_name, classifier_args=classifier_params
+        classifier_name=classifier_name,
+        classifier_args=classifier_params,
+        num_classes=dataset_train.num_classes,
+        image_size=base_config["dataset"]["image_size"],
     )
 
     # Compute and log the number of params in the model
@@ -232,8 +205,13 @@ def main(
 
     log.info("\nclassifier: %s", model_config["classifier"]["name"])
 
+    solver_config = base_config["solver"]
     optimizer, lr_scheduler = build_solvers(
-        model.parameters(), solver_config.optimizer, solver_config.lr_scheduler
+        model,
+        solver_config["optimizer"],
+        solver_config["lr_scheduler"],
+        parameter_strategy=solver_config.get("parameter_strategy", "all"),
+        backbone_lr=solver_config["optimizer"].get("backbone_lr", None),
     )
 
     total_steps = (len(dataloader_train) * epochs) // grad_accum_steps

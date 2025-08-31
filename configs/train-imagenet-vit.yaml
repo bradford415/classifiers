@@ -30,6 +30,8 @@ dataset:
   # The image size to resize and crop images to; e.g., 224 = 224x224
   image_size: 224
 
+  num_classes: 1000
+
   # Number of CPU processes the next sample in the dataset; use 0 to only use the main process
   num_workers: 4
 

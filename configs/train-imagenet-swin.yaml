@@ -34,10 +34,6 @@ dataset:
   num_workers: 4
 
 train:
-  # Configurations for training objects such as the epochs, batch_size optimizer, & lr scheduler
-  # See solvers.config for available configs
-  solver_config: "vit_b16_imagenet_config"
-
   max_norm: 1.0
   
   # batches & epochs
@@ -54,7 +50,7 @@ train:
   checkpoint_path: #"/home/bselee/programming/classifiers/output/train/development/2025_04_25-07_53_49_PM/checkpoints/best_acc1_62-95.pt"
 
 # solver params: optimzer, lr scheduler, etc.
-sovler:
+solver:
 
   optimizer:
     # The optimizer to use; must be one of the names in the optimizer_map dict

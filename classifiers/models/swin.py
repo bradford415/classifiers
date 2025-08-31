@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Union
 
 import torch
 from torch import nn
@@ -12,8 +12,8 @@ class PatchEmbed(nn.Module):
 
     def __init__(
         self,
-        img_size: int | tuple = 224,
-        patch_size: int | tuple = 4,
+        img_size: Union[int, tuple] = 224,
+        patch_size: Union[int, tuple] = 4,
         in_chs: int = 3,
         embed_dim: int = 96,
         norm_layer: Optional[nn.Module] = nn.LayerNorm,
@@ -90,7 +90,7 @@ class SwinTransformer(nn.Module):
 
     def __init__(
         self,
-        img_size: int = 224,
+        img_size: int,
         patch_size: int = 4,
         in_chans: int = 3,
         num_classes: int = 1000,
@@ -139,7 +139,7 @@ class SwinTransformer(nn.Module):
         self.patch_embed = PatchEmbed(
             img_size=img_size,
             patch_size=patch_size,
-            in_chans=in_chans,
+            in_chs=in_chans,
             embed_dim=patch_emb_dim,
             norm_layer=norm_layer if self.patch_norm else None,
         )
@@ -149,7 +149,7 @@ class SwinTransformer(nn.Module):
         patches_resolution = self.patch_embed.patches_resolution
         self.patches_resolution = patches_resolution
 
-        self.pos_drop == nn.Dropout(dropout)
+        self.pos_drop = nn.Dropout(dropout)
 
         # Stochastic depth; TODO comment more what this does
         dpr = [
@@ -163,7 +163,7 @@ class SwinTransformer(nn.Module):
             # layer dim doubles every layer i.e., [128, 256, 512, 1024]
             dim = int(patch_emb_dim * 2**layer_i)
 
-            # layer spatial resolution halves every layer
+            # layer spatial resolution halves both dimensions every layer; the initial PatchEmbed reduces by 1/4
             # for input (224, 224) num_patches = 56 i.e., [(56, 56), (28, 28), (14, 14), (7, 7)]
             input_res = (
                 (
@@ -173,10 +173,19 @@ class SwinTransformer(nn.Module):
             )
 
             breakpoint()
-            ###### START HERE
-            # TODO: understand and comment
-            drop_path = dpr[sum(depths[:layer_i]) : sum(depths[: layer_i + 1])]
+            # define the probability for each swin block for stochastic depth; this is the probability
+            # of randomly skipping an entire residual branch in a block during training which acts as a
+            # form of regularization; this means that in a residual connection [x + F(x)], the probability
+            # that F(x) is skipped (multiplied by 0); the earlier layers have a lower probablity and the
+            # later layers have a higher probability; each swin block will have a probability of skipping
+            # described in Section A2.1 in the paper
+            dpr = [
+                x.item() for x in torch.linspace(0, drop_path_rate, sum(depths))
+            ]  # stochastic depth decay rule
 
+            assert len(dpr) == sum(depths)
+
+            ##### START HERE
             layer = BasicLayer(
                 dim=dim,
                 # TODO understand this input resoution
@@ -198,7 +207,9 @@ class SwinTransformer(nn.Module):
             self.layers.append(layer)
 
 
-def build_swin(num_classes: int, swin_params: dict[str, any]):
+def build_swin(
+    num_classes: int, img_size: Union[int, tuple], swin_params: dict[str, any]
+):
     """Initalize the Swin Transformer model
 
     Args:
@@ -209,7 +220,7 @@ def build_swin(num_classes: int, swin_params: dict[str, any]):
     layernorm = nn.LayerNorm
 
     swin_model = SwinTransformer(
-        img_size=swin_params["img_size"],
+        img_size=img_size,
         patch_size=swin_params["patch_size"],
         in_chans=3,  # for RGB images
         num_classes=num_classes,
@@ -221,8 +232,8 @@ def build_swin(num_classes: int, swin_params: dict[str, any]):
         qkv_bias=True,
         qk_scale=None,
         dropout=swin_params["dropout"],
-        attn_drop_rate=swin_params["attn_drop"],
-        drop_path_rate=swin_params["attn_drop_rate"],
+        attn_drop_rate=swin_params["attn_dropout"],
+        drop_path_rate=swin_params["drop_path_rate"],
         norm_layer=layernorm,
         ape=swin_params["ape"],
         patch_norm=swin_params["patch_norm"],
