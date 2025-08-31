@@ -200,7 +200,7 @@ class SwinTransformer(nn.Module):
 
 def build_swin(num_classes: int, swin_params: dict[str, any]):
     """Initalize the Swin Transformer model
-    
+
     Args:
         num_classes: number of unique classes in the dataset ontology;
         swin_params: dictionary of parameters used to intialize the swin transformer with
@@ -211,14 +211,14 @@ def build_swin(num_classes: int, swin_params: dict[str, any]):
     swin_model = SwinTransformer(
         img_size=swin_params["img_size"],
         patch_size=swin_params["patch_size"],
-        in_chans = 3, # for RGB images
-        num_classes = num_classes,
+        in_chans=3,  # for RGB images
+        num_classes=num_classes,
         patch_emb_dim=swin_params["patch_emb_dim"],
-        depths=swin_params["depths"], 
+        depths=swin_params["depths"],
         num_heads=swin_params["num_heads"],
         window_size=swin_params["window_size"],
-        mlp_ratio=swin_params["mlp_ratio"]
-        qkv_bias = True,
+        mlp_ratio=swin_params["mlp_ratio"],
+        qkv_bias=True,
         qk_scale=None,
         dropout=swin_params["dropout"],
         attn_drop_rate=swin_params["attn_drop"],
@@ -227,6 +227,5 @@ def build_swin(num_classes: int, swin_params: dict[str, any]):
         ape=swin_params["ape"],
         patch_norm=swin_params["patch_norm"],
         use_checkpoint=swin_params["use_activation_checkpointing"],
-        #### start here, run og swin transformer code and see if this is used
-        fused_window_process: bool = False,
-        )
+        fused_window_process=False,
+    )

@@ -217,6 +217,7 @@ def main(
         ValueError("classifier not recognized.")
 
     # Initalize classifier
+    ##### start here, run code and initalize model so we can step through it
     classifier_name = model_config["classifier"]
     classifier_params = model_config["params"]
     model = create_classifier(
