@@ -8,7 +8,11 @@ This project is designed to use the configuration specified in `configs/`, but f
 
 ### Training from scratch
 ```bash
+# train ViT
 python scripts/train.py configs/train-imagenet-vit.yaml configs/vit/vit-base-16.yaml
+
+# train Swin
+python scripts/train.py configs/train-imagenet-swin.yaml configs/swin/swin-base-patch-4-window-7.yaml
 ```
 
 ### Resume training from a checkpoint
