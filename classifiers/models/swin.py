@@ -78,6 +78,11 @@ class WindowAttention(nn.Module):
         relative_position_index = relative_coords.sum(-1)  # Wh*Ww, Wh*Ww
         self.register_buffer("relative_position_index", relative_position_index)
 
+        # Intuition of the `relative_position_index` above
+        #   1. Each relative position (Δy, Δx) maps to a unique integer index.
+        #   2. Later, a learnable bias table of size (2*Wh-1 * 2*Ww-1, num_heads) is created.
+        #   3. During attention, relative_position_index[i, j] selects the correct bias entry 
+        #      to add to the attention logits for pair (i, j).
 
         ######## start heree ########
         self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
