@@ -56,6 +56,9 @@ After running the download script, the ImageNet dataset will be organized as sho
 | ResNet50   | Scratch    | ImageNet-1k (2012) | 74.9% / 96               |                                                                     |
 | ViT-B/16   | Scratch    | ImageNet-1k (2012) | 65.7% / 114              | Accuracy was still slowly increasing, but my tiny GPU wanted a break|
 
+## Explanations
+* [Swin's relative position bias]()
+
 ## Visuals
 ### Learning rate schedulers
 Visuals of the learning rate schedulers to get an intuitive idea of how they work in practice.
