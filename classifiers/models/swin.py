@@ -39,7 +39,8 @@ class WindowAttention(nn.Module):
         head_dim = dim // num_heads
         self.scale = qk_scale or head_dim**-0.5
 
-        # define a parameter table of relative position bias
+        breakpoint()
+        # define a parameter table of relative position bias (2*win_h-1 * 2*win_w-1, num_heads)
         self.relative_position_bias_table = nn.Parameter(
             torch.zeros((2 * window_size[0] - 1) * (2 * window_size[1] - 1), num_heads)
         )  # 2*Wh-1 * 2*Ww-1, nH
@@ -47,20 +48,38 @@ class WindowAttention(nn.Module):
         # get pair-wise relative position index for each token inside the window
         coords_h = torch.arange(self.window_size[0])
         coords_w = torch.arange(self.window_size[1])
-        coords = torch.stack(torch.meshgrid([coords_h, coords_w]))  # 2, Wh, Ww
-        coords_flatten = torch.flatten(coords, 1)  # 2, Wh*Ww
+        coords = torch.stack(torch.meshgrid([coords_h, coords_w])) # (2, win_h, win_w) where 2 [h, w]
+        coords_flatten = torch.flatten(coords, 1)  # (2, win_h * win_w)
+
+        # create pairwise indices for every patches relative position;
+        # computes all pairwise offsets for each pair of tokens (i, j), so for token pair
+        # (i, j) we now have offsets at relative_coords[:, i, j] = (delta_y, delta_x)
         relative_coords = (
             coords_flatten[:, :, None] - coords_flatten[:, None, :]
-        )  # 2, Wh*Ww, Wh*Ww
+        )  # (2, win_h * win_w, win_h * win_w) where 2 = (h, w)
+
         relative_coords = relative_coords.permute(
             1, 2, 0
-        ).contiguous()  # Wh*Ww, Wh*Ww, 2
-        relative_coords[:, :, 0] += self.window_size[0] - 1  # shift to start from 0
+        ).contiguous()  # (win_h * win_w, win_h * win_w, 2)
+
+
+        # shift to start from 0
+        # shift the offsets so they're non-negative: go from [-(Wh-1) to +(Wh-1)].
+        # to [0 … 2*Wh-2] after the shift
+        relative_coords[:, :, 0] += self.window_size[0] - 1
         relative_coords[:, :, 1] += self.window_size[1] - 1
+
+        # encodes (Δy, Δx) into a single index by giving the y-offset a stride;
+        # think of it like flattening a 2D index into a 1D array
         relative_coords[:, :, 0] *= 2 * self.window_size[1] - 1
+    
+        # Final result: a (win_h * win_w, win_h * win_w) matrix, where entry (i, j) 
+        # is a unique integer ID for the relative position between tokens i and j.
         relative_position_index = relative_coords.sum(-1)  # Wh*Ww, Wh*Ww
         self.register_buffer("relative_position_index", relative_position_index)
 
+
+        ######## start heree ########
         self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
         self.attn_drop = nn.Dropout(attn_drop)
         self.proj = nn.Linear(dim, dim)
@@ -136,6 +155,56 @@ class WindowAttention(nn.Module):
         return flops
 
 
+class PatchMerging(nn.Module):
+    # TODO: go through and understand/comment
+    r"""Patch Merging Layer.
+
+    Args:
+        input_resolution (tuple[int]): Resolution of input feature.
+        dim (int): Number of input channels.
+        norm_layer (nn.Module, optional): Normalization layer.  Default: nn.LayerNorm
+    """
+
+    def __init__(self, input_resolution, dim, norm_layer=nn.LayerNorm):
+        super().__init__()
+        self.input_resolution = input_resolution
+        self.dim = dim
+        self.reduction = nn.Linear(4 * dim, 2 * dim, bias=False)
+        self.norm = norm_layer(4 * dim)
+
+    def forward(self, x):
+        """
+        x: B, H*W, C
+        """
+        H, W = self.input_resolution
+        B, L, C = x.shape
+        assert L == H * W, "input feature has wrong size"
+        assert H % 2 == 0 and W % 2 == 0, f"x size ({H}*{W}) are not even."
+
+        x = x.view(B, H, W, C)
+
+        x0 = x[:, 0::2, 0::2, :]  # B H/2 W/2 C
+        x1 = x[:, 1::2, 0::2, :]  # B H/2 W/2 C
+        x2 = x[:, 0::2, 1::2, :]  # B H/2 W/2 C
+        x3 = x[:, 1::2, 1::2, :]  # B H/2 W/2 C
+        x = torch.cat([x0, x1, x2, x3], -1)  # B H/2 W/2 4*C
+        x = x.view(B, -1, 4 * C)  # B H/2*W/2 4*C
+
+        x = self.norm(x)
+        x = self.reduction(x)
+
+        return x
+
+    def extra_repr(self) -> str:
+        return f"input_resolution={self.input_resolution}, dim={self.dim}"
+
+    def flops(self):
+        H, W = self.input_resolution
+        flops = H * W * self.dim
+        flops += (H // 2) * (W // 2) * 4 * self.dim * 2 * self.dim
+        return flops
+
+
 class BasicLayer(nn.Module):
     """A basic Swin Transformer layer for one stage."""
 
@@ -149,7 +218,7 @@ class BasicLayer(nn.Module):
         mlp_ratio: float = 4.0,
         qkv_bias: Optional[bool] = True,
         qk_scale: Optional[float] = None,
-        drop: Optional[float] = 0.0,
+        dropout: Optional[float] = 0.0,
         attn_drop: Optional[float] = 0.0,
         drop_path: Union[tuple[float], float] = 0.0,
         norm_layer: Optional[nn.Module] = nn.LayerNorm,
@@ -198,7 +267,7 @@ class BasicLayer(nn.Module):
                     mlp_ratio=mlp_ratio,
                     qkv_bias=qkv_bias,
                     qk_scale=qk_scale,
-                    drop=drop,
+                    dropout=dropout,
                     attn_drop=attn_drop,
                     drop_path=(
                         drop_path[i] if isinstance(drop_path, list) else drop_path
@@ -253,7 +322,7 @@ class SwinTransformerBlock(nn.Module):
         mlp_ratio: float = 4.0,
         qkv_bias: bool = True,
         qk_scale: Optional[float] = None,
-        drop: float = 0.0,
+        dropout: float = 0.0,
         attn_drop: float = 0.0,
         drop_path: float = 0.0,
         act_layer: nn.Module = nn.GELU,
@@ -271,7 +340,7 @@ class SwinTransformerBlock(nn.Module):
             mlp_ratio: Ratio of mlp hidden dim to embedding dim.
             qkv_bias: If True, add a learnable bias to query, key, value. Default: True
             qk_scale: overrides the default qk scale of head_dim ** -0.5 if set; the division by sqrt(head_dim)
-            drop: dropout rate
+            dropout: dropout rate
             attn_drop: Attention dropout rate
             drop_path: Stochastic depth rate; probability of ignoring the residual for the specific
                        current block; only takes a single float since this is the residual we would
@@ -305,6 +374,7 @@ class SwinTransformerBlock(nn.Module):
         )
 
         self.norm1 = norm_layer(dim)
+
         self.attn = WindowAttention(
             dim,
             window_size=win_size,
@@ -312,7 +382,7 @@ class SwinTransformerBlock(nn.Module):
             qkv_bias=qkv_bias,
             qk_scale=qk_scale,
             attn_drop=attn_drop,
-            proj_drop=drop,
+            proj_drop=dropout,
         )
 
         self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
@@ -612,10 +682,8 @@ class SwinTransformer(nn.Module):
             # layer spatial resolution halves both dimensions every layer; the initial PatchEmbed reduces by 1/4
             # for input (224, 224) num_patches = 56 i.e., [(56, 56), (28, 28), (14, 14), (7, 7)]
             input_res = (
-                (
-                    patches_resolution[0] // (2**layer_i),
-                    patches_resolution[1] // (2**layer_i),
-                ),
+                patches_resolution[0] // (2**layer_i),
+                patches_resolution[1] // (2**layer_i),
             )
 
             # define the probability for each swin block for stochastic depth; this is the probability
@@ -646,7 +714,7 @@ class SwinTransformer(nn.Module):
                 mlp_ratio=self.mlp_ratio,
                 qkv_bias=qkv_bias,
                 qk_scale=qk_scale,
-                drop=layer_dpr,
+                dropout=dropout,
                 attn_drop=attn_drop_rate,
                 drop_path=layer_dpr,
                 norm_layer=norm_layer,
@@ -656,7 +724,6 @@ class SwinTransformer(nn.Module):
             )
             self.layers.append(layer)
 
-            breakpoint()
             layer = BasicLayer(
                 dim=dim,
                 # TODO understand this input resoution
