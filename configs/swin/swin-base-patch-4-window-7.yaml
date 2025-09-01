@@ -32,10 +32,10 @@ params:
   # TODO
   num_heads: [4, 8, 16, 32]
 
-  # TODO
+  # ratio of mlp hidden dim to embedding dim.
   mlp_ratio: 4.0
 
-  # Dropout to use for the relative postion embeddings and TODO something w/ BasicLayer
+  # dropout p to use for the: projection after attention, the relative postion embeddings and TODO something w/ BasicLayer
   dropout: 0.0
 
   # dropout for the attention weight
@@ -59,7 +59,4 @@ params:
 
   # whether to use activation checkpointing to save memory
   use_activation_checkpointing: False
-
-  
-
 
