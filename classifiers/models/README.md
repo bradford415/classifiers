@@ -18,6 +18,9 @@ The way I think about this bias matrix is that `patch 1` in the `3x3` window is 
 
 <img width="600" height="337" alt="window_and_bias_mat" src="https://github.com/user-attachments/assets/b1703207-2346-4cf8-b227-b954136c46b5" />
 
+Once we have this bias matrix, we need to add it to the attention scores at each head. The `3x3` matrix shows the patches such that they are spatially correct (they look like an image), but when we compute the attention scores we do it on the flattened patches; i.e, `3x3` -> `9 patches` so to compute attention we'll perform matrix multiplication between `(9, head_dim)` and `(head_dim, 9)` to get a `9, 9` attention matrix, where `9 = number of patches`. Since the relative position bias is added after the attention scores are computed (just before the softmax), we'll need to transform this `5x5` bias matrix into a `9x9` in order to add these relative positions to the attention matrix.
+
+The relative position biawe can create a matrix of $` M^2 x M^2 `$
 
 
 
