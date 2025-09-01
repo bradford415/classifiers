@@ -1,4 +1,4 @@
-# Swin
+<img width="303" height="312" alt="image" src="https://github.com/user-attachments/assets/40812a69-4801-4756-8046-8bb74abd0342" /># Swin
 ### Relative Position Bias
 Example of Swin's relative position bias
 
@@ -20,7 +20,14 @@ The way I think about this bias matrix is that `patch 1` in the `3x3` window is 
 
 Once we have this bias matrix, we need to add it to the attention scores at each head. The `3x3` matrix shows the patches such that they are spatially correct (they look like an image), but when we compute the attention scores we do it on the flattened patches; i.e, `3x3` -> `9 patches` so to compute attention we'll perform matrix multiplication between `(9, head_dim)` and `(head_dim, 9)` to get a `9, 9` attention matrix, where `9 = number of patches`. Since the relative position bias is added after the attention scores are computed (just before the softmax), we'll need to transform this `5x5` bias matrix into a `9x9` in order to add these relative positions to the attention matrix.
 
-The relative position biawe can create a matrix of $` M^2 x M^2 `$
+To map this `5x5` to the `9x9`, each cell in the `5x5` below is marked with a unique integer, we'll use this to identify the mapping to the `9x9`. Like above, we'll only focus on `patch 1` (blue) and `patch 6` (yellow)
+
+<img width="300" height="300" alt="bias-matrix-int" src="https://github.com/user-attachments/assets/6fb9fd89-e70a-4539-8daa-a435d0822eac" />
+
+In the `9x9`, we're saying I want the pairwise relative positions of the patch 1 (column) amongst every other patch in the bias table. Think of this as flattening the blue `3x3` region in the `5x5` bias matrix along the patch 1 column in the `9x9`. For example purposes, this is repeated for patch 6 as well. The result is below.
+
+<img width="500" height="500" alt="5-to-9-attn" src="https://github.com/user-attachments/assets/42f6ae3d-83f5-40e4-95e7-b5a64cff70e3" />
+
 
 
 
