@@ -16,7 +16,7 @@ If we sample every patch’s relative position to all the other patches, we can 
 
 The way I think about this bias matrix is that `patch 1` in the `3x3` window is responsible for the bottom right `3x3` region of the `5x5` matrix; likewise, `patch 6` is responsible for the middle left `3x3` region of the `5x5` matrix as illustrated below. Note that the green shading is showing the overlap.
 
-<img width="1000" height="562" alt="window_and_bias_mat" src="https://github.com/user-attachments/assets/b1703207-2346-4cf8-b227-b954136c46b5" />
+<img width="600" height="337" alt="window_and_bias_mat" src="https://github.com/user-attachments/assets/b1703207-2346-4cf8-b227-b954136c46b5" />
 
 
 
