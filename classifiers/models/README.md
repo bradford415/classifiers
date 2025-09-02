@@ -1,4 +1,4 @@
-<img width="303" height="312" alt="image" src="https://github.com/user-attachments/assets/40812a69-4801-4756-8046-8bb74abd0342" /># Swin
+# Swin
 ### Relative Position Bias
 Example of Swin's relative position bias
 
