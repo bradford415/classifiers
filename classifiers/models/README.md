@@ -28,6 +28,11 @@ In the `9x9`, we're saying I want the pairwise relative positions of the patch 1
 
 <img width="500" height="500" alt="5-to-9-attn" src="https://github.com/user-attachments/assets/42f6ae3d-83f5-40e4-95e7-b5a64cff70e3" />
 
+### Efficient batch computation for shifted configuration
+Masking of the 9 regions before cyclic shifting
+
+![masked_shift](https://github.com/user-attachments/assets/c00c8393-1ca8-48a1-b3d6-75866c36f138)
+
 
 
 
