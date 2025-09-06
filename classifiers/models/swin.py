@@ -1,7 +1,37 @@
+import math
 from typing import Optional, Union
 
 import torch
 from torch import nn
+
+
+class MLP(nn.Module):
+    """2-layer MLP for after each attention module"""
+
+    def __init__(
+        self,
+        in_features,
+        hidden_features=None,
+        out_features=None,
+        act_layer=nn.GELU,
+        drop=0.0,
+    ):
+        """ """
+        super().__init__()
+        out_features = out_features or in_features
+        hidden_features = hidden_features or in_features
+        self.fc1 = nn.Linear(in_features, hidden_features)
+        self.act = act_layer()
+        self.fc2 = nn.Linear(hidden_features, out_features)
+        self.drop = nn.Dropout(drop)
+
+    def forward(self, x):
+        x = self.fc1(x)
+        x = self.act(x)
+        x = self.drop(x)
+        x = self.fc2(x)
+        x = self.drop(x)
+        return x
 
 
 class WindowAttention(nn.Module):
@@ -30,8 +60,6 @@ class WindowAttention(nn.Module):
             attn_drop: Dropout ratio of attention weight. Default: 0.0
             proj_drop: Dropout ratio of output. Default: 0.0
         """
-        ########### START HERE, go through windowAttention then back to what calls it
-
         super().__init__()
         self.dim = dim
         self.window_size = window_size  # Wh, Ww
@@ -39,8 +67,9 @@ class WindowAttention(nn.Module):
         head_dim = dim // num_heads
         self.scale = qk_scale or head_dim**-0.5
 
-        breakpoint()
         # define a parameter table of relative position bias (2*win_h-1 * 2*win_w-1, num_heads)
+        # see classifiers/models/README.md for me info on this matrix
+        # described in Section 3.2 Relative position bias - represents the B hat matrix
         self.relative_position_bias_table = nn.Parameter(
             torch.zeros((2 * window_size[0] - 1) * (2 * window_size[1] - 1), num_heads)
         )  # 2*Wh-1 * 2*Ww-1, nH
@@ -48,7 +77,9 @@ class WindowAttention(nn.Module):
         # get pair-wise relative position index for each token inside the window
         coords_h = torch.arange(self.window_size[0])
         coords_w = torch.arange(self.window_size[1])
-        coords = torch.stack(torch.meshgrid([coords_h, coords_w])) # (2, win_h, win_w) where 2 [h, w]
+        coords = torch.stack(
+            torch.meshgrid([coords_h, coords_w])
+        )  # (2, win_h, win_w) where 2 [h, w]
         coords_flatten = torch.flatten(coords, 1)  # (2, win_h * win_w)
 
         # create pairwise indices for every patches relative position;
@@ -62,7 +93,6 @@ class WindowAttention(nn.Module):
             1, 2, 0
         ).contiguous()  # (win_h * win_w, win_h * win_w, 2)
 
-
         # shift to start from 0
         # shift the offsets so they're non-negative: go from [-(Wh-1) to +(Wh-1)].
         # to [0 … 2*Wh-2] after the shift
@@ -72,8 +102,8 @@ class WindowAttention(nn.Module):
         # encodes (Δy, Δx) into a single index by giving the y-offset a stride;
         # think of it like flattening a 2D index into a 1D array
         relative_coords[:, :, 0] *= 2 * self.window_size[1] - 1
-    
-        # Final result: a (win_h * win_w, win_h * win_w) matrix, where entry (i, j) 
+
+        # Final result: a (win_h * win_w, win_h * win_w) matrix, where entry (i, j)
         # is a unique integer ID for the relative position between tokens i and j.
         relative_position_index = relative_coords.sum(-1)  # Wh*Ww, Wh*Ww
         self.register_buffer("relative_position_index", relative_position_index)
@@ -81,16 +111,20 @@ class WindowAttention(nn.Module):
         # Intuition of the `relative_position_index` above
         #   1. Each relative position (Δy, Δx) maps to a unique integer index.
         #   2. Later, a learnable bias table of size (2*Wh-1 * 2*Ww-1, num_heads) is created.
-        #   3. During attention, relative_position_index[i, j] selects the correct bias entry 
+        #   3. During attention, relative_position_index[i, j] selects the correct bias entry
         #      to add to the attention logits for pair (i, j).
 
-        ######## start heree ########
+        # Initialize the layers for qkv projection and the projection after attention
         self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
         self.attn_drop = nn.Dropout(attn_drop)
         self.proj = nn.Linear(dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
 
-        trunc_normal_(self.relative_position_bias_table, std=0.02)
+        # fill the relative position bias matrix from a normal distribution truncated between
+        # [-2, 2] which helps avoid too extreme values
+        trunc_normal_(
+            self.relative_position_bias_table, mean=0, std=0.02, a=-2.0, b=2.0
+        )
         self.softmax = nn.Softmax(dim=-1)
 
     def forward(self, x, mask=None):
@@ -380,6 +414,7 @@ class SwinTransformerBlock(nn.Module):
 
         self.norm1 = norm_layer(dim)
 
+        # Create the Windowed Multiheaded Self-Attention module (W-MSA)
         self.attn = WindowAttention(
             dim,
             window_size=win_size,
@@ -390,16 +425,22 @@ class SwinTransformerBlock(nn.Module):
             proj_drop=dropout,
         )
 
+        # Initialize the module which randomly drops residual blocks per sample (0s the tensors out like dropout does)
         self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
+
         self.norm2 = norm_layer(dim)
         mlp_hidden_dim = int(dim * mlp_ratio)
-        self.mlp = Mlp(
+
+        # 2-layer MLP after the windowed attention module
+        self.mlp = MLP(
             in_features=dim,
             hidden_features=mlp_hidden_dim,
             act_layer=act_layer,
-            drop=drop,
+            drop=dropout,
         )
 
+        breakpoint()
+        ## start here - go through and comment about this - I think this is the sw msa case but need to explain when its used
         if self.shift_size > 0:
             # calculate attention mask for SW-MSA
             H, W = self.input_resolution
@@ -429,6 +470,7 @@ class SwinTransformerBlock(nn.Module):
                 attn_mask != 0, float(-100.0)
             ).masked_fill(attn_mask == 0, float(0.0))
         else:
+            # regular W-MSA i.e., no shifted windows
             attn_mask = None
 
         self.register_buffer("attn_mask", attn_mask)
@@ -748,6 +790,147 @@ class SwinTransformer(nn.Module):
                 fused_window_process=fused_window_process,
             )
             self.layers.append(layer)
+
+
+def drop_path(
+    x, drop_prob: float = 0.0, training: bool = False, scale_by_keep: bool = True
+):
+    """Drop paths (Stochastic Depth) per sample (when applied in main path of residual blocks).
+
+    This is the same as the DropConnect impl I created for EfficientNet, etc networks, however,
+    the original name is misleading as 'Drop Connect' is a different form of dropout in a separate paper...
+    See discussion: https://github.com/tensorflow/tpu/issues/494#issuecomment-532968956 ... I've opted for
+    changing the layer and argument names to 'drop path' rather than mix DropConnect as a layer name and use
+    'survival rate' as the argument.
+
+    """
+    # return if not training or the probability of drop path is 0
+    if drop_prob == 0.0 or not training:
+        return x
+
+    # compute probability of keeping the path
+    keep_prob = 1 - drop_prob
+
+    # (batch_size, 1, 1, ..., 1) so each sample in the batch gets its own random keep/drop decision.
+    # Example: if x has shape [64, 128, 32, 32], then mask has shape [64, 1, 1, 1].
+    shape = (x.shape[0],) + (1,) * (
+        x.ndim - 1
+    )  # work with diff dim tensors, not just 2D ConvNets
+
+    # choose 0 or 1 for each sample in the batch where 1 = keep the residual and 0 = drop the residual
+    # by zeroing every thing out (x * random_tensor); e.g., if drop_prob = 0.2 then there's an 80% chance
+    # the residual is kept, for each sample there will be a 20% chance that it is zero'd out effectively
+    # skipping the residual for that sample
+    random_tensor = x.new_empty(shape).bernoulli_(keep_prob)
+
+    # Scaling by 1/keep_prob ensures the expected value of activations (any output of a layer)
+    # is preserved (like Dropout).
+    # If keep_prob = 0.8, then ~80% of samples keep the path.
+    # Otherwise, the network’s activation magnitude would shrink.
+    if keep_prob > 0.0 and scale_by_keep:
+        random_tensor.div_(keep_prob)
+
+    # broadcast the sampled bernoulli values (1 or 0) across each sample; keeps or zeros out the
+    # tensor value
+    return x * random_tensor
+
+
+class DropPath(nn.Module):
+    """Drop paths (Stochastic Depth) per sample (when applied in main path of residual blocks)."""
+
+    def __init__(self, drop_prob: float = 0.0, scale_by_keep: bool = True):
+        """
+
+        Args:
+            scale_by_keep: Whether to rescale surviving paths to preserve the expected magnitude (like Dropout does)
+        """
+        super().__init__()
+        self.drop_prob = drop_prob
+        self.scale_by_keep = scale_by_keep
+
+    def forward(self, x):
+        return drop_path(x, self.drop_prob, self.training, self.scale_by_keep)
+
+    def extra_repr(self):
+        return f"drop_prob={round(self.drop_prob,3):0.3f}"
+
+
+def trunc_normal_(
+    tensor: torch.Tensor,
+    mean: float = 0.0,
+    std: float = 1.0,
+    a: float = -2.0,
+    b: float = 2.0,
+):
+    """
+    Copied from: https://github.com/huggingface/pytorch-image-models/blob/cedba69c198455e35d7fad09155bffaae0b390cd/timm/layers/weight_init.py#L43
+
+    Purpose:
+        * Fill a tensor with values from a normal distribution with given mean and standard
+          deviation (std), but truncated so that all values lie within [a, b].
+        * This is commonly used in neural network weight initialization to avoid extreme values.
+
+    Internally uses CDF → uniform → inverse CDF transform to efficiently generate truncated normal samples.
+
+    Fills the input Tensor with values drawn from a truncated
+    normal distribution. The values are effectively drawn from the
+    normal distribution :math:`\mathcal{N}(\text{mean}, \text{std}^2)`
+    with values outside :math:`[a, b]` redrawn until they are within
+    the bounds. The method used for generating the random values works
+    best when :math:`a \leq \text{mean} \leq b`.
+
+    NOTE: this impl is similar to the PyTorch trunc_normal_, the bounds [a, b] are
+    applied while sampling the normal with mean/std applied, therefore a, b args
+    should be adjusted to match the range of mean, std args.
+
+    Args:
+        tensor: an n-dimensional `torch.Tensor`
+        mean: the mean of the normal distribution
+        std: the standard deviation of the normal distribution
+        a: the minimum cutoff value
+        b: the maximum cutoff value
+    Examples:
+        >>> w = torch.empty(3, 5)
+        >>> nn.init.trunc_normal_(w)
+    """
+
+    # Cut & paste from PyTorch official master until it's in a few official releases - RW
+    # Method based on https://people.sc.fsu.edu/~jburkardt/presentations/truncated_normal.pdf
+    with torch.no_grad():
+
+        def norm_cdf(x):
+            # Computes standard normal cumulative distribution function
+            return (1.0 + math.erf(x / math.sqrt(2.0))) / 2.0
+
+        if (mean < a - 2 * std) or (mean > b + 2 * std):
+            warnings.warn(
+                "mean is more than 2 std from [a, b] in nn.init.trunc_normal_. "
+                "The distribution of values may be incorrect.",
+                stacklevel=2,
+            )
+
+        # Values are generated by using a truncated uniform distribution and
+        # then using the inverse CDF for the normal distribution.
+        # Get upper and lower cdf values
+        l = norm_cdf((a - mean) / std)
+        u = norm_cdf((b - mean) / std)
+
+        # Uniformly fill tensor with values from [l, u], then translate to
+        # [2l-1, 2u-1].
+        tensor.uniform_(2 * l - 1, 2 * u - 1)
+
+        # Use inverse cdf transform for normal distribution to get truncated
+        # standard normal
+        tensor.erfinv_()
+
+        # Transform to proper mean, std
+        tensor.mul_(std * math.sqrt(2.0))
+        tensor.add_(mean)
+
+        # Clamp to ensure it's in the proper range
+        tensor.clamp_(min=a, max=b)
+
+        return tensor
 
 
 def build_swin(
