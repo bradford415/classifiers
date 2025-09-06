@@ -5,6 +5,26 @@ import torch
 from torch import nn
 
 
+def window_partition(x: torch.Tensor, window_size: int):
+    """Reshapes x to partition into non-overlapping windows
+    Args:
+        x: the mask for the shifted windows (B, H, W, C)
+        window_size: window size
+
+    Returns:
+        windows: (num_windows*B, window_size, window_size, C)
+    """
+    B, H, W, C = x.shape
+    
+    # (b, num_windows_h, window_size, num_windows_w, window_size, c)
+    x = x.view(B, H // window_size, window_size, W // window_size, window_size, C)
+    
+    # (b, num_windows_h, num_windows_w,, window_size,  window_size, c) -> 
+    # (b * num_windows_h * num_windows_w, window_size, window_size, c)
+    windows = x.permute(0, 1, 3, 2, 4, 5).contiguous().view(-1, window_size, window_size, C)
+    return windows
+
+
 class MLP(nn.Module):
     """2-layer MLP for after each attention module"""
 
@@ -349,7 +369,9 @@ class BasicLayer(nn.Module):
 
 
 class SwinTransformerBlock(nn.Module):
-    """Swin Transformer Block"""
+    """Swin Transformer Block which performs either W-MSA or SW-MSA; every block it alternates
+    between the two
+    """
 
     def __init__(
         self,
@@ -374,8 +396,8 @@ class SwinTransformerBlock(nn.Module):
             input_resolution: Input resolution.
             num_heads: Number of attention heads.
             window_size: Local window size.
-            shift_size: TODO: flesh out more; Shift size for SW-MSA
-                        (shifted window multiheaded self-attention).
+            shift_size: Shift size for sw-msa (shifted window multiheaded self-attention); this is
+                        shift_size=0 for regular w-msa and  shift_size=window_size // 2 for sw-msa
             mlp_ratio: Ratio of mlp hidden dim to embedding dim.
             qkv_bias: If True, add a learnable bias to query, key, value. Default: True
             qk_scale: overrides the default qk scale of head_dim ** -0.5 if set; the division by sqrt(head_dim)
@@ -439,39 +461,74 @@ class SwinTransformerBlock(nn.Module):
             drop=dropout,
         )
 
-        breakpoint()
-        ## start here - go through and comment about this - I think this is the sw msa case but need to explain when its used
+        # Every other block the shift_size > 0 for sw-msa
         if self.shift_size > 0:
-            # calculate attention mask for SW-MSA
+            breakpoint()
+            # calculate attention mask for SW-MSA; used to assign different integer IDs to 
+            # different regions of the image
+            # this mask is mentioned in Figure 4, for efficient batch computation:
+            #   1. essentially, when we cyclic shift the windows, we will have more windows 
+            #      (some smaller than MxM - see Fgiure 4) and some of the windows
+            #      (the corners, top/bottom, and the left/right edges) will have wrap around 
+            #      and have patches that are not adjacent in the image
+            #   2. Swin only wants to compute attention locally and have patches globally communicate
+            #      through window shifting; therefore, to keep this efficient, we create a mask which
+            #      for each region with uniuqe IDs `cnt` so later we can tell which tokens belong
+            #      to the same masked group 
+            #   3. For efficient batch computation, we keep the same number of windos as before the 
+            #      shift but employ the masking mechanism so it's like there are additional windows
+            #      after the shift
             H, W = self.input_resolution
-            img_mask = torch.zeros((1, H, W, 1))  # 1 H W 1
+            img_mask = torch.zeros((1, H, W, 1))  # (1, h, w, 1)
+
             h_slices = (
-                slice(0, -self.window_size),
-                slice(-self.window_size, -self.shift_size),
-                slice(-self.shift_size, None),
+                slice(0, -self.window_size), # rows [0, h-window_size]
+                slice(-self.window_size, -self.shift_size), # rows[window_size + 1, h - shift_size]
+                slice(-self.shift_size, None), # rows[h - shift_size, h]
             )
             w_slices = (
-                slice(0, -self.window_size),
-                slice(-self.window_size, -self.shift_size),
-                slice(-self.shift_size, None),
+                slice(0, -self.window_size), # cols [0, w - window_size]
+                slice(-self.window_size, -self.shift_size), # cols [window_size + 1, w - shift_size]
+                slice(-self.shift_size, None), # cols [w - shift_size, w]
             )
+
+            # assign a unique ID to each of the 9 regions; for a visual of this masking,
+            # see classifiers/models/README.md `Efficient batch computation for shifted configuration`
             cnt = 0
             for h in h_slices:
                 for w in w_slices:
                     img_mask[:, h, w, :] = cnt
                     cnt += 1
 
+            # partition the mask into windows (b*num_windows, window_size, window_size, 1)
             mask_windows = window_partition(
                 img_mask, self.window_size
             )  # nW, window_size, window_size, 1
+
+            # flatten the window masks (b*num_windows, window_size*window_size)
             mask_windows = mask_windows.view(-1, self.window_size * self.window_size)
+            
+            # subtracts region IDs between every pair of positions inside the same window
+            # to get the pairwise difference
+            #   1. if patches come from different regions, the
+            #      difference will be non-zero and the patches should not attend
+            #   2. patches in the same window that come from different regions are not
+            #      spatially accurate so it does not make sense for them to attend
+            #      since attention in swin is performed locally
+            #   3. patches in the same window that come from the same region can attend,
+            #      and patches within the same window may come from several different regions
             attn_mask = mask_windows.unsqueeze(1) - mask_windows.unsqueeze(2)
+
+            # block attention between patches not in the same region
             attn_mask = attn_mask.masked_fill(
                 attn_mask != 0, float(-100.0)
             ).masked_fill(attn_mask == 0, float(0.0))
         else:
             # regular W-MSA i.e., no shifted windows
             attn_mask = None
+            
+            
+        #### start here
 
         self.register_buffer("attn_mask", attn_mask)
         self.fused_window_process = fused_window_process
