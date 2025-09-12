@@ -15,13 +15,15 @@ def window_partition(x: torch.Tensor, window_size: int):
         windows: (num_windows*B, window_size, window_size, C)
     """
     B, H, W, C = x.shape
-    
+
     # (b, num_windows_h, window_size, num_windows_w, window_size, c)
     x = x.view(B, H // window_size, window_size, W // window_size, window_size, C)
-    
-    # (b, num_windows_h, num_windows_w,, window_size,  window_size, c) -> 
+
+    # (b, num_windows_h, num_windows_w,, window_size,  window_size, c) ->
     # (b * num_windows_h * num_windows_w, window_size, window_size, c)
-    windows = x.permute(0, 1, 3, 2, 4, 5).contiguous().view(-1, window_size, window_size, C)
+    windows = (
+        x.permute(0, 1, 3, 2, 4, 5).contiguous().view(-1, window_size, window_size, C)
+    )
     return windows
 
 
@@ -216,40 +218,74 @@ class WindowAttention(nn.Module):
 
 class PatchMerging(nn.Module):
     # TODO: go through and understand/comment
-    r"""Patch Merging Layer.
+    """Patch Merging Layer to downsample at after each stage (except the last)
 
-    Args:
-        input_resolution (tuple[int]): Resolution of input feature.
-        dim (int): Number of input channels.
-        norm_layer (nn.Module, optional): Normalization layer.  Default: nn.LayerNorm
+    Downsamples by 2x
     """
 
-    def __init__(self, input_resolution, dim, norm_layer=nn.LayerNorm):
+    def __init__(
+        self,
+        input_resolution: tuple[int, int],
+        dim: int,
+        norm_layer: Optional[nn.Module] = nn.LayerNorm,
+    ):
+        """Initalize the PatchMerging module
+
+        Args:
+            input_resolution: Resolution of input feature.
+            dim: Number of input channels.
+            norm_layer: Normalization layer.  Default: nn.LayerNorm
+        """
         super().__init__()
         self.input_resolution = input_resolution
         self.dim = dim
+
+        # projects the 2x2 merged patches so we need input_dim =  4*dim
         self.reduction = nn.Linear(4 * dim, 2 * dim, bias=False)
+
         self.norm = norm_layer(4 * dim)
 
     def forward(self, x):
-        """
-        x: B, H*W, C
+        """Merge patches and downsample
+
+        Args:
+            x: flattened input tokens (b, h*w, c)
+
+        Returns:
+            a downsample feature map of flattened patches with shape (b, h/2*w/2, 2*c)
+            NOTE: the merge is 4*c but the projection at the end reduces the channel dim by 2
         """
         H, W = self.input_resolution
         B, L, C = x.shape
         assert L == H * W, "input feature has wrong size"
         assert H % 2 == 0 and W % 2 == 0, f"x size ({H}*{W}) are not even."
 
+        # reshape back to spatial dims
         x = x.view(B, H, W, C)
 
-        x0 = x[:, 0::2, 0::2, :]  # B H/2 W/2 C
-        x1 = x[:, 1::2, 0::2, :]  # B H/2 W/2 C
-        x2 = x[:, 0::2, 1::2, :]  # B H/2 W/2 C
-        x3 = x[:, 1::2, 1::2, :]  # B H/2 W/2 C
-        x = torch.cat([x0, x1, x2, x3], -1)  # B H/2 W/2 4*C
-        x = x.view(B, -1, 4 * C)  # B H/2*W/2 4*C
+        # TODO verify this logic
+        # extract all even patches from the height and width
+        x0 = x[:, 0::2, 0::2, :]  # (b, h/2, w/2, c)
+
+        # extract all odd patches from the height and even patches from the width
+        x1 = x[:, 1::2, 0::2, :]  # (b, h/2, w/2, c)
+
+        # extract all even patches from the height and odd patches from the width
+        x2 = x[:, 0::2, 1::2, :]  # (b, h/2, w/2, c)
+
+        # extract all odd patches from the height and odd patches from the width
+        x3 = x[:, 1::2, 1::2, :]  # (b, h/2, w/2, c)
+
+        breakpoint()
+        # concatenate the the 4 patches of the 2x2 region along the channel dimension (downsamples by 2x)
+        x = torch.cat([x0, x1, x2, x3], -1)  # (b, h/2, w/2, 4*c)
+
+        # collapse the spatial dims to flatten the patches (b, h/2*w/2, 4*c)
+        x = x.view(B, -1, 4 * C)
 
         x = self.norm(x)
+
+        # project the merged patches to (b, h/2*w/2, 2*c)
         x = self.reduction(x)
 
         return x
@@ -314,7 +350,8 @@ class BasicLayer(nn.Module):
         self.depth = depth
         self.use_checkpoint = use_checkpoint
 
-        # build blocks
+        # build list of the specified number of swin blocks `depth` for the current stage/level;
+        # every other block will perform sw-msa insead of regular w-msa
         self.blocks = nn.ModuleList(
             [
                 SwinTransformerBlock(
@@ -338,7 +375,7 @@ class BasicLayer(nn.Module):
             ]
         )
 
-        # patch merging layer
+        # patch merging layer - downsample at the end of the first 3 stages (not the last one)
         if downsample is not None:
             self.downsample = downsample(
                 input_resolution, dim=dim, norm_layer=norm_layer
@@ -461,35 +498,38 @@ class SwinTransformerBlock(nn.Module):
             drop=dropout,
         )
 
-        # Every other block the shift_size > 0 for sw-msa
+        # Every other block the shift_size > 0 and sw-msa is used
         if self.shift_size > 0:
-            breakpoint()
-            # calculate attention mask for SW-MSA; used to assign different integer IDs to 
+            # calculate attention mask for SW-MSA; used to assign different integer IDs to
             # different regions of the image
             # this mask is mentioned in Figure 4, for efficient batch computation:
-            #   1. essentially, when we cyclic shift the windows, we will have more windows 
+            #   1. essentially, when we cyclic shift the windows, we will have more windows
             #      (some smaller than MxM - see Fgiure 4) and some of the windows
-            #      (the corners, top/bottom, and the left/right edges) will have wrap around 
+            #      (the corners, top/bottom, and the left/right edges) will have wrap around
             #      and have patches that are not adjacent in the image
             #   2. Swin only wants to compute attention locally and have patches globally communicate
             #      through window shifting; therefore, to keep this efficient, we create a mask which
             #      for each region with uniuqe IDs `cnt` so later we can tell which tokens belong
-            #      to the same masked group 
-            #   3. For efficient batch computation, we keep the same number of windos as before the 
+            #      to the same masked group
+            #   3. For efficient batch computation, we keep the same number of windos as before the
             #      shift but employ the masking mechanism so it's like there are additional windows
             #      after the shift
             H, W = self.input_resolution
             img_mask = torch.zeros((1, H, W, 1))  # (1, h, w, 1)
 
             h_slices = (
-                slice(0, -self.window_size), # rows [0, h-window_size]
-                slice(-self.window_size, -self.shift_size), # rows[window_size + 1, h - shift_size]
-                slice(-self.shift_size, None), # rows[h - shift_size, h]
+                slice(0, -self.window_size),  # rows [0, h-window_size]
+                slice(
+                    -self.window_size, -self.shift_size
+                ),  # rows[window_size + 1, h - shift_size]
+                slice(-self.shift_size, None),  # rows[h - shift_size, h]
             )
             w_slices = (
-                slice(0, -self.window_size), # cols [0, w - window_size]
-                slice(-self.window_size, -self.shift_size), # cols [window_size + 1, w - shift_size]
-                slice(-self.shift_size, None), # cols [w - shift_size, w]
+                slice(0, -self.window_size),  # cols [0, w - window_size]
+                slice(
+                    -self.window_size, -self.shift_size
+                ),  # cols [window_size + 1, w - shift_size]
+                slice(-self.shift_size, None),  # cols [w - shift_size, w]
             )
 
             # assign a unique ID to each of the 9 regions; for a visual of this masking,
@@ -507,7 +547,7 @@ class SwinTransformerBlock(nn.Module):
 
             # flatten the window masks (b*num_windows, window_size*window_size)
             mask_windows = mask_windows.view(-1, self.window_size * self.window_size)
-            
+
             # subtracts region IDs between every pair of positions inside the same window
             # to get the pairwise difference
             #   1. if patches come from different regions, the
@@ -526,11 +566,10 @@ class SwinTransformerBlock(nn.Module):
         else:
             # regular W-MSA i.e., no shifted windows
             attn_mask = None
-            
-            
-        #### start here
 
+        # save the mask as a model attribute
         self.register_buffer("attn_mask", attn_mask)
+
         self.fused_window_process = fused_window_process
 
     def forward(self, x):
@@ -750,7 +789,11 @@ class SwinTransformer(nn.Module):
         self.ape = ape
         self.patch_norm = patch_norm
 
-        # TODO: comment
+        # the channel dimension at the end of the last swin layer (patch_dim * (2^num_layers-1))
+        # e.g., dim = 128 num_layers (stages) = 4, then num_features = 128 * 2 ^ 3 = 1024
+        # the patch merging stacks 4 patches making the feature (channel) dim = 4 * dim but there's a
+        # projection layer at the end of the patch merging which reduces the feature dim to 2 * dim;
+        # and we only apply patch merging at [:num_layers-1] so the feature dim only gets amplified 3 times
         self.num_features = int(patch_emb_dim * 2 ** (self.num_layers - 1))
 
         self.mlp_ratio = mlp_ratio
@@ -828,25 +871,31 @@ class SwinTransformer(nn.Module):
             )
             self.layers.append(layer)
 
-            layer = BasicLayer(
-                dim=dim,
-                # TODO understand this input resoution
-                input_resolution=input_res,
-                depth=depths[layer_i],
-                num_heads=num_heads[layer_i],
-                window_size=window_size,
-                mlp_ratio=self.mlp_ratio,
-                qkv_bias=qkv_bias,
-                qk_scale=qk_scale,
-                drop=dropout,
-                attn_drop=attn_drop_rate,
-                drop_path=drop_path,
-                norm_layer=norm_layer,
-                downsample=PatchMerging if (layer_i < self.num_layers - 1) else None,
-                use_checkpoint=use_checkpoint,
-                fused_window_process=fused_window_process,
-            )
-            self.layers.append(layer)
+        self.norm = norm_layer(self.num_features)
+
+        # start here comment what this is for
+        self.avgpool = nn.AdaptiveAvgPool1d(1)
+
+        self.head = (
+            nn.Linear(self.num_features, num_classes)
+            if num_classes > 0
+            else nn.Identity()
+        )
+
+        self.apply(self._init_weights)
+
+    def _init_weights(self, m):
+        """Initializes the following layers weights and biases
+        - linear layers to a truncated normal distribution (std=0.02) and sets bias to 0
+        - LayerNorms bias to 0 and weight to 1
+        """
+        if isinstance(m, nn.Linear):
+            trunc_normal_(m.weight, std=0.02)
+            if isinstance(m, nn.Linear) and m.bias is not None:
+                nn.init.constant_(m.bias, 0)
+        elif isinstance(m, nn.LayerNorm):
+            nn.init.constant_(m.bias, 0)
+            nn.init.constant_(m.weight, 1.0)
 
 
 def drop_path(
@@ -1023,3 +1072,5 @@ def build_swin(
         use_checkpoint=swin_params["use_activation_checkpointing"],
         fused_window_process=False,
     )
+
+    return swin_model

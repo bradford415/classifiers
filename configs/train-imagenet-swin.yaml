@@ -60,14 +60,13 @@ solver:
       lr: 0.001
       weight_decay: 0.05
 
+  # TODO: figure out which scheduler and optimizer swin uses
   lr_scheduler:
-    name: "warmup_cosine_decay"
+    name: "reduce_lr_on_plateau"
     step_lr_on: "epochs" # step the lr after n "epochs" or "steps"
     
     params:
-      warmup_epochs: 5 # linear warmup for this many epochs
-      warmup_min_lr: 1e-6
-      # Note: total_steps is set by number of epochs
+      mode: "min"
 
 
 # GPU parameters

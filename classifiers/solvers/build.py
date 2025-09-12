@@ -1,6 +1,8 @@
 from collections.abc import Iterable
+from typing import Optional
 
 import torch
+from torch import nn
 
 from classifiers.solvers.schedulers import (
     make_cosine_anneal,
@@ -23,10 +25,30 @@ scheduler_map = {
 }
 
 
+def get_optimizer_params(
+    model: torch.nn.Module, strategy: str = "all", backbone_lr: Optional[float] = None
+):
+    """Extract the traininable parameters from the model in different groupes; allows us to spceicfy
+    different learning rates for different groups of parameters
+
+    Strategies:
+        all: extract all traininable parameters from the model and use the same learning rate
+        separate_backbone: separate the backbone parameters from the rest of the model and use
+                           a different learning rate for the backbone
+    """
+
+    parameters = [
+        param for name, param in model.named_parameters() if param.requires_grad
+    ]
+    param_dicts = [{"params": parameters}]
+
+    return param_dicts
+
+
 def build_solvers(
-    model_params: Iterable,
-    optimizer_params: dict[str, any],
-    scheduler_params: dict[str, any],
+    model: nn.Module,
+    optimizer_config: dict[str, any],
+    scheduler_config: dict[str, any],
 ):
     """Builds the optimizer and learning rate scheduler based on the provided parameters
     from solver.config
@@ -36,12 +58,13 @@ def build_solvers(
         scheduler_params: the parameters used to build the learning rate scheduler
         optimizer: the optimizer used during training
     """
-    optimizer_name = optimizer_params["name"]
-    scheduler_name = scheduler_params["name"]
+    optimizer_name = optimizer_config["name"]
+    scheduler_name = scheduler_config["name"]
 
-    # TODO: use a parameters field instead of this; Delete name key so we can easily unpack the parameters
-    del optimizer_params["name"]
-    del scheduler_params["name"]
+    optimizer_params = optimizer_config["params"]
+    scheduler_params = scheduler_config["params"]
+
+    model_params = get_optimizer_params(model)
 
     # Build optimizer
     if optimizer_name in optimizer_map:

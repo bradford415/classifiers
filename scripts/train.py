@@ -202,15 +202,15 @@ def main(
     model.to(device)
     criterion = nn.CrossEntropyLoss()
 
-    log.info("\nclassifier: %s", model_config["classifier"]["name"])
+    log.info("\nclassifier: %s", model_config["classifier"])
 
     solver_config = base_config["solver"]
     optimizer, lr_scheduler = build_solvers(
         model,
         solver_config["optimizer"],
         solver_config["lr_scheduler"],
-        parameter_strategy=solver_config.get("parameter_strategy", "all"),
-        backbone_lr=solver_config["optimizer"].get("backbone_lr", None),
+        # NOTE: does not really make sense to have a backbone_lr and optimizer strategy
+        #       like in my detectors repo since the backbone is just the classifier
     )
 
     total_steps = (len(dataloader_train) * epochs) // grad_accum_steps
@@ -220,7 +220,7 @@ def main(
 
     trainer = Trainer(
         output_dir=str(output_path),
-        step_lr_on=solver_config["step_lr_on"],
+        step_lr_on=solver_config["lr_scheduler"]["step_lr_on"],
         device=device,
         log_train_steps=base_config["log_train_steps"],
         disable_amp=base_config["disable_amp"],

@@ -22,9 +22,8 @@ def create_classifier(
                      final linear layer
 
     """
-
     if "swin" in classifier_name:
-        model = _create_swin(classifier_name, num_classes, image_size, classifier_args)
+        model = _create_swin(num_classes, image_size, classifier_args)
     else:
         raise ValueError(f"detctor: {classifier_name} not recognized")
 
@@ -32,7 +31,6 @@ def create_classifier(
 
 
 def _create_swin(
-    classifier_name: str,
     num_classes: int,
     img_size: Union[int, tuple],
     classifier_args: dict[str, any],
