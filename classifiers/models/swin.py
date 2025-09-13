@@ -7,6 +7,7 @@ from torch import nn
 
 def window_partition(x: torch.Tensor, window_size: int):
     """Reshapes x to partition into non-overlapping windows
+
     Args:
         x: the mask for the shifted windows (B, H, W, C)
         window_size: window size
@@ -573,12 +574,15 @@ class SwinTransformerBlock(nn.Module):
         self.fused_window_process = fused_window_process
 
     def forward(self, x):
+        breakpoint()
         H, W = self.input_resolution
-        B, L, C = x.shape
+        B, L, C = x.shape  # L = sequence length/number of patches
         assert L == H * W, "input feature has wrong size"
 
         shortcut = x
         x = self.norm1(x)
+
+        # reshape patches to spatial dims
         x = x.view(B, H, W, C)
 
         # cyclic shift
@@ -592,34 +596,37 @@ class SwinTransformerBlock(nn.Module):
                     shifted_x, self.window_size
                 )  # nW*B, window_size, window_size, C
             else:
+                # only for fused window process
                 x_windows = WindowProcess.apply(
                     x, B, H, W, C, -self.shift_size, self.window_size
                 )
         else:
             shifted_x = x
-            # partition windows
+
+            # partition patches into windows to shape (num_windows*b, window_size, window_size, c)
             x_windows = window_partition(
                 shifted_x, self.window_size
             )  # nW*B, window_size, window_size, C
 
-        x_windows = x_windows.view(
-            -1, self.window_size * self.window_size, C
-        )  # nW*B, window_size*window_size, C
+        # flatten windows
+        x_windows = x_windows.view(-1, self.window_size * self.window_size, C)
 
-        # W-MSA/SW-MSA
-        attn_windows = self.attn(
-            x_windows, mask=self.attn_mask
-        )  # nW*B, window_size*window_size, C
+        # perform W-MSA or SW-MSA on the flattened windows (b * num_windows, window_size * window_size, c)
+        attn_windows = self.attn(x_windows, mask=self.attn_mask)
 
-        # merge windows
+        # merge windows by reshaping back to spatial dims (b * num_windows, window_size, window_size, c)
         attn_windows = attn_windows.view(-1, self.window_size, self.window_size, C)
 
-        # reverse cyclic shift
+        # reverse cyclic shift; convert windows back to patches (b, h, w, c) and shift the feature map
+        # back to its original spot (down and to the right)
         if self.shift_size > 0:
             if not self.fused_window_process:
+                # convert windows back to patches (b, h, w, c)
                 shifted_x = window_reverse(
                     attn_windows, self.window_size, H, W
                 )  # B H' W' C
+
+                # start here
                 x = torch.roll(
                     shifted_x, shifts=(self.shift_size, self.shift_size), dims=(1, 2)
                 )
@@ -728,7 +735,7 @@ class PatchEmbed(nn.Module):
         """
         b, c, h, w = x.shape
 
-        assert self.image_size == (h, w)
+        assert self.img_size == (h, w)
 
         # (b, patch_emb_dim, h_p, w_p) -> (b, patch_emb_dim, h_p*w_p)
         # -> (b, h_p*w_p, patch_emb_dim) where h_p = height // patch_size
@@ -873,9 +880,11 @@ class SwinTransformer(nn.Module):
 
         self.norm = norm_layer(self.num_features)
 
-        # start here comment what this is for
+        # performs average pooling on the output feature map of the last stage
+        # along the token dim (TODO verify the correct dim) for classification
         self.avgpool = nn.AdaptiveAvgPool1d(1)
 
+        # Linear head for final class logits
         self.head = (
             nn.Linear(self.num_features, num_classes)
             if num_classes > 0
@@ -896,6 +905,78 @@ class SwinTransformer(nn.Module):
         elif isinstance(m, nn.LayerNorm):
             nn.init.constant_(m.bias, 0)
             nn.init.constant_(m.weight, 1.0)
+
+    @torch.jit.ignore
+    def no_weight_decay(self):
+        return {"absolute_pos_embed"}
+
+    @torch.jit.ignore
+    def no_weight_decay_keywords(self):
+        return {"relative_position_bias_table"}
+
+    def forward_features(self, x):
+        x = self.patch_embed(x)
+        if self.ape:
+            x = x + self.absolute_pos_embed
+        x = self.pos_drop(x)
+
+        for layer in self.layers:
+            x = layer(x)
+
+        breakpoint()
+        x = self.norm(x)  # B L C
+        x = self.avgpool(x.transpose(1, 2))  # B C 1
+        x = torch.flatten(x, 1)
+        return x
+
+    def forward(self, x):
+        """Forward pass through the swin transformer"""
+        # forward pass through the feature extractor
+        x = self.forward_features(x)
+
+        # classification for class logits
+        x = self.head(x)
+        return x
+
+    def flops(self):
+        flops = 0
+        flops += self.patch_embed.flops()
+        for i, layer in enumerate(self.layers):
+            flops += layer.flops()
+        flops += (
+            self.num_features
+            * self.patches_resolution[0]
+            * self.patches_resolution[1]
+            // (2**self.num_layers)
+        )
+        flops += self.num_features * self.num_classes
+        return flops
+
+
+def window_reverse(windows: torch.Tesnor, window_size: int, H: int, W: int):
+    """Convert windows back to patches
+
+    Args:
+        windows: (num_windows * b, window_size, window_size, c)
+        window_size: Window size
+        H: Height of image (in patches)
+        W: Width of image (in patches)
+
+    Returns:
+        x: (B, H, W, C) where H/W equal number of patches along that dimension
+    """
+    # compute the batch size by dividing the number of windows into the first dim
+    B = int(windows.shape[0] / (H * W / window_size / window_size))
+
+    # reshape to (b, num_windows_h, num_windows_w, window_size, window_size, c)
+    x = windows.view(
+        B, H // window_size, W // window_size, window_size, window_size, -1
+    )
+
+    # reshape windows back to patches
+    # (b, num_windows_h, win_size, num_wins_w,  win_size, c) -> (b, h, w, c)
+    x = x.permute(0, 1, 3, 2, 4, 5).contiguous().view(B, H, W, -1)
+    return x
 
 
 def drop_path(
