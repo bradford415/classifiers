@@ -141,8 +141,9 @@ def main(
 
     # Set device specific characteristics
     use_cpu = False
+    gpu_id = base_config["cuda"]["gpus"][0]
     if torch.cuda.is_available():
-        device = torch.device("cuda")
+        device = torch.device(f"cuda:{gpu_id}")
         log.info("Using %d GPU(s): ", len(base_config["cuda"]["gpus"]))
         for gpu in range(len(base_config["cuda"]["gpus"])):
             log.info("    -%s", torch.cuda.get_device_name(gpu))
