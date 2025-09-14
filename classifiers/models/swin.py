@@ -277,7 +277,6 @@ class PatchMerging(nn.Module):
         # extract all odd patches from the height and odd patches from the width
         x3 = x[:, 1::2, 1::2, :]  # (b, h/2, w/2, c)
 
-        breakpoint()
         # concatenate the the 4 patches of the 2x2 region along the channel dimension (downsamples by 2x)
         x = torch.cat([x0, x1, x2, x3], -1)  # (b, h/2, w/2, 4*c)
 
@@ -366,7 +365,7 @@ class BasicLayer(nn.Module):
                     qk_scale=qk_scale,
                     dropout=dropout,
                     attn_drop=attn_drop,
-                    drop_path=(
+                    drop_path_rate=(
                         drop_path[i] if isinstance(drop_path, list) else drop_path
                     ),
                     norm_layer=norm_layer,
@@ -385,13 +384,24 @@ class BasicLayer(nn.Module):
             self.downsample = None
 
     def forward(self, x):
+        """Forward pass through the stack of TransformerBlocks for the current stage/level
+        
+        Args:
+            x: flattened feature map of patches (b, num_patches, c)
+
+        Returns:
+            the final feature map of flattened patches (b, h/32 * w/32, c)
+        """
         for blk in self.blocks:
             if self.use_checkpoint:
                 x = checkpoint.checkpoint(blk, x)
             else:
                 x = blk(x)
+
+        # merge patches at the end of the stage to downsample; happens in every stage but the last
         if self.downsample is not None:
             x = self.downsample(x)
+
         return x
 
     def extra_repr(self) -> str:
@@ -423,7 +433,7 @@ class SwinTransformerBlock(nn.Module):
         qk_scale: Optional[float] = None,
         dropout: float = 0.0,
         attn_drop: float = 0.0,
-        drop_path: float = 0.0,
+        drop_path_rate: float = 0.0,
         act_layer: nn.Module = nn.GELU,
         norm_layer: nn.Module = nn.LayerNorm,
         fused_window_process: bool = False,
@@ -441,9 +451,9 @@ class SwinTransformerBlock(nn.Module):
             qk_scale: overrides the default qk scale of head_dim ** -0.5 if set; the division by sqrt(head_dim)
             dropout: dropout rate
             attn_drop: Attention dropout rate
-            drop_path: Stochastic depth rate; probability of ignoring the residual for the specific
-                       current block; only takes a single float since this is the residual we would
-                       be skipping
+            drop_path_prob: Stochastic depth rate; probability of ignoring the residual for the specific
+                            current block; only takes a single float since this is the residual we would
+                            be skipping
             act_layer: Activation layer. Default: nn.GELU
             norm_layer: Normalization layer. Default: nn.LayerNorm
             fused_window_process: If True, use one kernel to fused window shift & window partition
@@ -486,7 +496,11 @@ class SwinTransformerBlock(nn.Module):
         )
 
         # Initialize the module which randomly drops residual blocks per sample (0s the tensors out like dropout does)
-        self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
+        self.drop_path = (
+            DropPath(drop_path_rate) if drop_path_rate > 0.0 else nn.Identity()
+        )
+
+        self.drop_path_rate = drop_path_rate
 
         self.norm2 = norm_layer(dim)
         mlp_hidden_dim = int(dim * mlp_ratio)
@@ -574,7 +588,14 @@ class SwinTransformerBlock(nn.Module):
         self.fused_window_process = fused_window_process
 
     def forward(self, x):
-        breakpoint()
+        """Forward pass through the SwinTransformerBlock
+
+        Args:
+            x: flattened patches of the feature map (b, num_patches, c)
+
+        Returns:
+            the output of the swin transformer block (b, num_patches, c); same shape as input
+        """
         H, W = self.input_resolution
         B, L, C = x.shape  # L = sequence length/number of patches
         assert L == H * W, "input feature has wrong size"
@@ -588,10 +609,12 @@ class SwinTransformerBlock(nn.Module):
         # cyclic shift
         if self.shift_size > 0:
             if not self.fused_window_process:
+                # shift the patches along the spatial dims up and to the left
                 shifted_x = torch.roll(
                     x, shifts=(-self.shift_size, -self.shift_size), dims=(1, 2)
                 )
-                # partition windows
+
+                # partition the shifted patches into windows (b * num_windows, win_size, win_size, c)
                 x_windows = window_partition(
                     shifted_x, self.window_size
                 )  # nW*B, window_size, window_size, C
@@ -608,7 +631,7 @@ class SwinTransformerBlock(nn.Module):
                 shifted_x, self.window_size
             )  # nW*B, window_size, window_size, C
 
-        # flatten windows
+        # flatten windows (b * num_windows, win_size * win_size, c)
         x_windows = x_windows.view(-1, self.window_size * self.window_size, C)
 
         # perform W-MSA or SW-MSA on the flattened windows (b * num_windows, window_size * window_size, c)
@@ -626,7 +649,7 @@ class SwinTransformerBlock(nn.Module):
                     attn_windows, self.window_size, H, W
                 )  # B H' W' C
 
-                # start here
+                # shift the patches along the spatial dims down and to the right
                 x = torch.roll(
                     shifted_x, shifts=(self.shift_size, self.shift_size), dims=(1, 2)
                 )
@@ -635,14 +658,21 @@ class SwinTransformerBlock(nn.Module):
                     attn_windows, B, H, W, C, self.shift_size, self.window_size
                 )
         else:
+            # convert windows back to patches (b, h, w, c)
             shifted_x = window_reverse(
                 attn_windows, self.window_size, H, W
             )  # B H' W' C
             x = shifted_x
+
+        # flatten patches (b, h * w, c)
         x = x.view(B, H * W, C)
+
+        # add the identity (input x) with the attended outputs with samples randomly dropped;
+        # i.e., samples in batches are randomly zeroed out based on the drop_path_rate
         x = shortcut + self.drop_path(x)
 
-        # FFN
+        # project x (identity + dropped attended outputs) with an MLP and add x before projection
+        # NOTE: swin uses 2 skip connectsions, input -> msa and msa -> MLP output
         x = x + self.drop_path(self.mlp(self.norm2(x)))
 
         return x
@@ -920,10 +950,13 @@ class SwinTransformer(nn.Module):
             x = x + self.absolute_pos_embed
         x = self.pos_drop(x)
 
+        # forward pass through each stage of swin; final output is the flattened feature map of patches 
+        # (b, h/16 * w/16, 4 * c)
         for layer in self.layers:
             x = layer(x)
 
         breakpoint()
+        ##### start here
         x = self.norm(x)  # B L C
         x = self.avgpool(x.transpose(1, 2))  # B C 1
         x = torch.flatten(x, 1)
@@ -953,7 +986,7 @@ class SwinTransformer(nn.Module):
         return flops
 
 
-def window_reverse(windows: torch.Tesnor, window_size: int, H: int, W: int):
+def window_reverse(windows: torch.Tensor, window_size: int, H: int, W: int):
     """Convert windows back to patches
 
     Args:
