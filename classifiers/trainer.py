@@ -288,6 +288,7 @@ class Trainer:
                 enabled=self.enable_amp,
             ):
                 # (b, num_classes)
+                breakpoint()
                 preds = model(samples)
 
                 loss = criterion(preds, targets)
@@ -307,6 +308,7 @@ class Trainer:
             # breakpoint()
 
             # Calculate and accumulate gradients
+            breakpoint()
             if self.enable_amp:
                 scaler.scale(loss).backward()
             else:

@@ -3,10 +3,11 @@
 
 # Whether to run in development/debugging mode; this only uses a few samples in in the train/val dataset
 # to quickly run the code as well as sets num_workers=0
-dev_mode: False
+dev_mode: True
 
 # using amp is determined by device but one can override it here; True = disable amp
 disable_amp: False
+
 
 # Base directory for output files; do not change this 
 output_dir: "output/train"
