@@ -385,7 +385,7 @@ class BasicLayer(nn.Module):
 
     def forward(self, x):
         """Forward pass through the stack of TransformerBlocks for the current stage/level
-        
+
         Args:
             x: flattened feature map of patches (b, num_patches, c)
 
@@ -911,7 +911,7 @@ class SwinTransformer(nn.Module):
         self.norm = norm_layer(self.num_features)
 
         # performs average pooling on the output feature map of the last stage
-        # along the token dim (TODO verify the correct dim) for classification
+        # along the token dim for classification; using 1 is the same as GlobalAveragePooling
         self.avgpool = nn.AdaptiveAvgPool1d(1)
 
         # Linear head for final class logits
@@ -944,30 +944,43 @@ class SwinTransformer(nn.Module):
     def no_weight_decay_keywords(self):
         return {"relative_position_bias_table"}
 
-    def forward_features(self, x):
+    def forward_features(self, x: torch.Tensor):
+        """Forward pass through the swin stages and global average pooling
+
+        Args:
+            x: the input image to be processed; dimensions are its original input size after
+            transformations (i.e., resize to 224x224)(b, orig_c, orig_h, orig_w)
+        """
         x = self.patch_embed(x)
         if self.ape:
             x = x + self.absolute_pos_embed
         x = self.pos_drop(x)
 
-        # forward pass through each stage of swin; final output is the flattened feature map of patches 
+        # forward pass through each stage of swin; final output is the flattened feature map of patches
         # (b, h/16 * w/16, 4 * c)
         for layer in self.layers:
             x = layer(x)
 
-        breakpoint()
         ##### start here
+        # layer norm across the feature dim (channels); nn.LayerNorm always operates on the last dimension;
+        # this means that for shape (b, num_tokens, c), it will normalize across c, for every token in each batch
         x = self.norm(x)  # B L C
-        x = self.avgpool(x.transpose(1, 2))  # B C 1
-        x = torch.flatten(x, 1)
+
+        # average over the token dimension to get a global representation of each channel
+        x = self.avgpool(x.transpose(1, 2))  # (b, c, 1)
+        x = torch.flatten(x, 1)  # (b, c)
         return x
 
     def forward(self, x):
-        """Forward pass through the swin transformer"""
-        # forward pass through the feature extractor
+        """Forward pass through the swin transformer
+
+        Returns:
+            the classification logits for each sample in the batch (b, num_classes)
+        """
+        # forward pass through the feature extractor and global average pooling (b, c)
         x = self.forward_features(x)
 
-        # classification for class logits
+        # single linear layer for class logits (b, num_classes)
         x = self.head(x)
         return x
 
