@@ -58,12 +58,15 @@ solver:
     name: "adamw"
 
     params:
-      lr: 0.001
+      lr: 0.0005 # NOTE: may have to scale lr like the do in code but unsure; i think since I handle gradietn accumulation different I don't
       weight_decay: 0.05
 
   # TODO: figure out which scheduler and optimizer swin uses
   lr_scheduler:
-    name: "reduce_lr_on_plateau"
+    name: "warmup_cosine_decay"
+    num_cycles: 1 # 1 => only one decay, no restarts
+    warmup_epochs: 20 # TODO might need to adjust based on num epochs I choose
+    warmup_min_lr: 5e-6
     step_lr_on: "epochs" # step the lr after n "epochs" or "steps"
     
     params:
@@ -71,7 +74,7 @@ solver:
 
 
 # GPU parameters
-cuda:
+cuda:  
   # List of GPU devices to use
   gpus: [0]
 

@@ -206,8 +206,11 @@ def main(
     log.info("\nclassifier: %s", model_config["classifier"])
 
     solver_config = base_config["solver"]
+    ## start here, understand the lr scheduler
     optimizer, lr_scheduler = build_solvers(
         model,
+        epochs,
+        len(dataloader_train),
         solver_config["optimizer"],
         solver_config["lr_scheduler"],
         # NOTE: does not really make sense to have a backbone_lr and optimizer strategy

@@ -47,6 +47,8 @@ def get_optimizer_params(
 
 def build_solvers(
     model: nn.Module,
+    num_epochs: int,
+    num_steps_per_epoch: int,
     optimizer_config: dict[str, any],
     scheduler_config: dict[str, any],
 ):
@@ -75,6 +77,8 @@ def build_solvers(
     # TODO: impelement configs for warmup_cosine_decay
     # Build scheduler
     if scheduler_name in scheduler_map:
+        scheduler_params["num_epochs"] = num_epochs
+        scheduler_params["steps_per_epoch"] = num_steps_per_epoch
         scheduler = scheduler_map[scheduler_name](optimizer, **scheduler_params)
     else:
         raise ValueError(f"Unknown lr_scheduler: {scheduler_name}")
