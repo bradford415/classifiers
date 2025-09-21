@@ -354,21 +354,17 @@ class Trainer:
                     save_dir=str(self.output_dir),
                 )
 
-            if (steps) % 60 == 0 and curr_lr is not None:
-
-                log.info(
-                    "Current learning_rate: %s\n",
-                    curr_lr,
-                )
-
             if (steps) % self.log_train_steps == 0:
-
+                curr_lr = optimizer.param_groups[0]["lr"]
                 log.info(
-                    "epoch: %-10d iter: %d/%-10d train loss: %-10.4f",
+                    "epoch: %-10d iter: %d/%-12d train_loss: %-10.4f curr_lr: %-12.6f",  # -n = right padding
                     epoch,
                     steps,
                     len(dataloader_train),
-                    loss.item() * grad_accum_steps,
+                    # NOTE: need to multiply by grad_accum_steps because the loss variable is scaled 
+                    # and overwritten every step; the gradients is what stores the accumulated information
+                    loss.item() * grad_accum_steps, 
+                    curr_lr,
                 )
 
         return losses

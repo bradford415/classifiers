@@ -70,7 +70,6 @@ class WarmupCosineSchedule(LambdaLR):
 def warmup_cosine_decay(
     optimizer: torch.optim.Optimizer,
     warmup_epochs: int,
-    total_steps: int,
     num_epochs: int,
     steps_per_epoch: int,
     num_cycles: float = 0.5,

@@ -64,12 +64,23 @@ def main(
     dev_mode = base_config["dev_mode"]
 
     # Initialize paths
-    output_path = (
-        Path(base_config["output_dir"])
-        / base_config["exp_name"]
-        / f"{datetime.datetime.now().strftime('%Y_%m_%d-%I_%M_%S_%p')}"
-    )
+    checkpoint_path = base_config["train"].get("checkpoint_path", None)
+    if checkpoint_path:
+        # if resuming checkpoint use the same directory
+        output_path = Path(checkpoint_path).parent.parent
+        log.info(
+            "\nresuming training from the specificed checkpoint %s", checkpoint_path
+        )
+    else:
+        output_path = (
+            Path(base_config["output_dir"])
+            / base_config["exp_name"]
+            / f"{datetime.datetime.now().strftime('%Y_%m_%d-%I_%M_%S_%p')}"
+            / "train"
+        )
+
     output_path.mkdir(parents=True, exist_ok=True)
+
     log_path = output_path / "training.log"
 
     # Configure logger that prints to a log file and stdout
@@ -145,7 +156,7 @@ def main(
     if torch.cuda.is_available():
         device = torch.device(f"cuda:{gpu_id}")
         log.info("Using %d GPU(s): ", len(base_config["cuda"]["gpus"]))
-        for gpu in range(len(base_config["cuda"]["gpus"])):
+        for gpu in base_config["cuda"]["gpus"]:
             log.info("    -%s", torch.cuda.get_device_name(gpu))
     elif torch.mps.is_available():
         base_config["dataset"]["root"] = base_config["dataset"]["root_mac"]
