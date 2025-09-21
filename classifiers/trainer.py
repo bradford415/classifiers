@@ -361,9 +361,9 @@ class Trainer:
                     epoch,
                     steps,
                     len(dataloader_train),
-                    # NOTE: need to multiply by grad_accum_steps because the loss variable is scaled 
+                    # NOTE: need to multiply by grad_accum_steps because the loss variable is scaled
                     # and overwritten every step; the gradients is what stores the accumulated information
-                    loss.item() * grad_accum_steps, 
+                    loss.item() * grad_accum_steps,
                     curr_lr,
                 )
 

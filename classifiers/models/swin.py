@@ -912,7 +912,7 @@ class SwinTransformer(nn.Module):
 
         # performs average pooling on the output feature map of the last stage
         # along the token dim for classification; using 1 is the same as GlobalAveragePooling;
-        # this is pretty much the same as averaging the spatial dimensions like in a feature map, 
+        # this is pretty much the same as averaging the spatial dimensions like in a feature map,
         # so the resulting vector is (num_chs,)
         self.avgpool = nn.AdaptiveAvgPool1d(1)
 
@@ -969,7 +969,7 @@ class SwinTransformer(nn.Module):
         x = self.norm(x)  # B L C
 
         # average over the token dimension to get a global representation of each channel;
-        # this is pretty much the same as averaging the spatial dimensions like in a feature map, 
+        # this is pretty much the same as averaging the spatial dimensions like in a feature map,
         # so the resulting vector is (c,)
         x = self.avgpool(x.transpose(1, 2))  # (b, c, 1)
         x = torch.flatten(x, 1)  # (b, c)
@@ -1169,6 +1169,73 @@ def trunc_normal_(
 
         return tensor
 
+
+class SwinTransformerSimMIM(SwinTransformer):
+    """Swin Transformer for SimMIM
+
+    Used to pretrain the SwinTransformer feature extractor using self-supervised learning;
+    once trained, the SwinTransformer can be used to fine-tune on downstream tasks like object detection
+
+    Paper: https://arxiv.org/pdf/2111.09886
+    """
+
+    def __init__(
+        self,
+        **swin_kwargs
+    ):
+        """Initializes the SwinTransformer for SimMIM pretraining
+
+        Args:
+            swin_kwargs: keyword arguments for the SwinTransformer classification model;
+                         see SwinTransformer().__init__() for the specifc arguments
+        """
+        # initalize the SwinTransformer
+        super().__init__(**swin_kwargs)
+
+        assert self.num_classes == 0
+
+        # TODO: comment; create a single masked_token with the same embedding dimension
+        # as the SwinTransformer patchification (1, 1, patch_emb_dim)
+        self.mask_token = nn.Parameter(torch.zeros(1, 1, self.patch_emb_dim))
+        trunc_normal_(self.mask_token, mean=0., std=.02)
+
+    def forward(self, x, mask):
+        """Train the SwinTransformer using self-supervised learning (SimMIM)
+        
+        Args:
+            TODO 
+            x:
+            mask:
+        """
+        #### start here
+        x = self.patch_embed(x)
+
+        assert mask is not None
+        B, L, _ = x.shape
+
+        mask_tokens = self.mask_token.expand(B, L, -1)
+        w = mask.flatten(1).unsqueeze(-1).type_as(mask_tokens)
+        x = x * (1. - w) + mask_tokens * w
+
+        if self.ape:
+            x = x + self.absolute_pos_embed
+        x = self.pos_drop(x)
+
+        for layer in self.layers:
+            x = layer(x)
+        x = self.norm(x)
+
+        x = x.transpose(1, 2)
+        B, C, L = x.shape
+        H = W = int(L ** 0.5)
+        x = x.reshape(B, C, H, W)
+        return x
+
+
+    @torch.jit.ignore
+    def no_weight_decay(self):
+        return super().no_weight_decay() | {'mask_token'}
+        
 
 def build_swin(
     num_classes: int, img_size: Union[int, tuple], swin_params: dict[str, any]
