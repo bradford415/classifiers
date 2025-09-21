@@ -911,7 +911,9 @@ class SwinTransformer(nn.Module):
         self.norm = norm_layer(self.num_features)
 
         # performs average pooling on the output feature map of the last stage
-        # along the token dim for classification; using 1 is the same as GlobalAveragePooling
+        # along the token dim for classification; using 1 is the same as GlobalAveragePooling;
+        # this is pretty much the same as averaging the spatial dimensions like in a feature map, 
+        # so the resulting vector is (num_chs,)
         self.avgpool = nn.AdaptiveAvgPool1d(1)
 
         # Linear head for final class logits
@@ -966,7 +968,9 @@ class SwinTransformer(nn.Module):
         # this means that for shape (b, num_tokens, c), it will normalize across c, for every token in each batch
         x = self.norm(x)  # B L C
 
-        # average over the token dimension to get a global representation of each channel
+        # average over the token dimension to get a global representation of each channel;
+        # this is pretty much the same as averaging the spatial dimensions like in a feature map, 
+        # so the resulting vector is (c,)
         x = self.avgpool(x.transpose(1, 2))  # (b, c, 1)
         x = torch.flatten(x, 1)  # (b, c)
         return x
