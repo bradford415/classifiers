@@ -55,6 +55,7 @@ After running the download script, the ImageNet dataset will be organized as sho
 |------------|------------|--------------------|--------------------------|---------------------------------------------------------------------|
 | ResNet50   | Scratch    | ImageNet-1k (2012) | 74.9% / 96               |                                                                     |
 | ViT-B/16   | Scratch    | ImageNet-1k (2012) | 65.7% / 114              | Accuracy was still slowly increasing, but my tiny GPU wanted a break|
+| Swin-B     | Scratch    | ImageNet-1k (2012) |                          | Accuracy was still increasing, but my tiny GPU wanted a break|
 
 ## Explanations
 * [Swin's relative position bias]()
