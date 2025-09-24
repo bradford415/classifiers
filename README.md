@@ -2,6 +2,9 @@
 The goal of this repository is to: 
 * Implement powerful classifiers and understand their architecture so they can be used as backbones for other downstream tasks
 * Test and understand various components of deep learning (e.g., learning rate schedulers)
+* Training techniques
+  * Self-supervised pretraining
+  * Classification pretraining
 
 ## Training a model
 This project is designed to use the configuration specified in `configs/`, but for ease of use the CLI arguments specified below will overwrite the main default config parameters for quick setup.
@@ -55,7 +58,7 @@ After running the download script, the ImageNet dataset will be organized as sho
 |------------|------------|--------------------|--------------------------|---------------------------------------------------------------------|
 | ResNet50   | Scratch    | ImageNet-1k (2012) | 74.9% / 96               |                                                                     |
 | ViT-B/16   | Scratch    | ImageNet-1k (2012) | 65.7% / 114              | Accuracy was still slowly increasing, but my tiny GPU wanted a break|
-| Swin-B     | Scratch    | ImageNet-1k (2012) |                          | Accuracy was still increasing, but my tiny GPU wanted a break|
+| Swin-B     | Scratch    | ImageNet-1k (2012) | 69.3% / 64               | Accuracy was still increasing, but my tiny GPU wanted a break       |
 
 ## Explanations
 * [Swin's relative position bias]()
