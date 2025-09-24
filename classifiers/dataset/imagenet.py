@@ -72,6 +72,52 @@ def make_imagenet_transforms(dataset_split: str, img_size: int = 224):
     # NOTE: ImageNet does not have a public test set
     else:
         raise ValueError(f"unknown dataset split {dataset_split}")
+    
+    
+class SimMIMTransform:
+    def __init__(self, dataset_split: str, img_size: int = 224):
+        
+        _normalize = T.Compose(
+            [T.ToTensor(), T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])]
+        )
+        
+        # TODO: determine if I need separate augmentations for train and val
+        
+        self.transform_img = T.Compose([
+                # random resize crop works as so:
+                #   1. first compute the new area by randomly choosing a scale 
+                #      between [67%, 100%] and multiply by the area of the original image
+                #   2. then randomly pick an aspect ratio uniform(3/4, 4/3)
+                #   3. from the new area and aspect ratio, compute the new height and width
+                #      new_h = sqrt(new_area / aspect_ratio), new_w = aspect_ratio * new_h
+                #      (formula is a little confusing but chatgpt can explain)
+                #   4. randomly choose the top left corner for the cropped region
+                #      y = Uniform(0, original_h - new_h)
+                #      x = Uniform(0, original_w - new_w)
+                #   5. finally resize the crop to img_size (224x224)
+                # NOTE: `ratio`` is the default parameter and `scale`` is modified to match the simmim code
+                T.RandomResizedCrop(
+                    img_size, scale=(0.67, 1.), ratio=(3.0 / 4.0, 4.0 / 3.0)
+                ),  # 224 is commonly used to pretrain classifiers
+            T.RandomHorizontalFlip(),
+            _normalize
+        ])
+        
+        
+        #### start here go through MaskGenerator
+        
+        self.mask_generator = MaskGenerator(
+            input_size=config.DATA.IMG_SIZE,
+            mask_patch_size=config.DATA.MASK_PATCH_SIZE,
+            model_patch_size=model_patch_size,
+            mask_ratio=config.DATA.MASK_RATIO,
+        )
+    
+    def __call__(self, img):
+        img = self.transform_img(img)
+        mask = self.mask_generator()
+        
+        return img, mask
 
 
 def build_imagenet(
@@ -98,6 +144,40 @@ def build_imagenet(
 
     # Create the data augmentation transforms
     data_transforms = make_imagenet_transforms(dataset_split, img_size=image_size)
+
+    dataset = ImageNet(
+        image_folder=images_dir,
+        transforms=data_transforms,
+        dev_mode=dev_mode,
+    )
+
+    return dataset
+
+
+def build_imagenet_simmim(
+    root: str,
+    dataset_split: str,
+    image_size: int = 224,
+    dev_mode: bool = False,
+):
+    """Initialize the ImageNet2012 dataset for SimMIM pretraining
+
+    Args:
+        root: full path to the dataset root
+        split: which dataset split to use; `train` or `val`
+        image_size: square size of the image to resize/crop to; default is 224
+        dev_mode: whether to build the dataset in dev mode; if true, this only uses a few samples
+                         to quickly run the code
+    """
+    imagenet_root = Path(root)
+
+    if dataset_split == "train":
+        images_dir = imagenet_root / "train"
+    elif dataset_split == "val":
+        images_dir = imagenet_root / "val"
+
+    # Create the data augmentation transforms
+    data_transforms = make_imagenet_transforms_simmim(dataset_split, img_size=image_size)
 
     dataset = ImageNet(
         image_folder=images_dir,
