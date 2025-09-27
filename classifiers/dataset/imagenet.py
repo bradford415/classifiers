@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import numpy as np
 import torchvision.datasets as datasets
 import torchvision.transforms as T
 
@@ -32,7 +33,6 @@ class ImageNet(datasets.ImageFolder):
         self.num_classes = 1000
 
         # Substantially reduces the dataset size to quickly test code
-        # TODO: work on dev mode
         if dev_mode:
             self.samples = self.samples[:256]
 
@@ -72,6 +72,56 @@ def make_imagenet_transforms(dataset_split: str, img_size: int = 224):
     # NOTE: ImageNet does not have a public test set
     else:
         raise ValueError(f"unknown dataset split {dataset_split}")
+
+
+class MaskGenerator:
+    """Mask Generator for SimMIM used to create binary masks that tell the model which patches 
+    of an image to hide
+    """
+    def __init__(self, input_size=192, mask_patch_size=32, model_patch_size=4, mask_ratio=0.6):
+        """Initalize the MaskGenerator
+        
+        Args:
+            input_size: size of the input image after transformations
+            mask_patch_size: size of the patches to be masked; this is NOT related
+                             to the Swin patch size e.g., Swin typically uses 4x4 patches;
+                             must be divisible by input image size and model_patch_size must
+                             be divisible by mask_patch_size
+            model_patch_size: size of the patches used by the model; this this is typically
+                              4x4 for Swin; must be divisible by mask_patch_size
+            mask_ratio: the percentage of total patches to mask (e.g., 0.6 = 60% of patches are masked)
+        """
+        self.input_size = input_size
+        self.mask_patch_size = mask_patch_size
+        self.model_patch_size = model_patch_size
+        self.mask_ratio = mask_ratio
+        
+        assert self.input_size % self.mask_patch_size == 0
+        assert self.mask_patch_size % self.model_patch_size == 0
+        
+        # number of masked patches along one side; e.g., 192 // 32 = 6 → so the image is 
+        # divided into a 6×6 grid of mask patches. 
+        self.rand_size = self.input_size // self.mask_patch_size
+        
+        # number of patches in one mask patch; e.g., 32 // 4 = 8
+        self.scale = self.mask_patch_size // self.model_patch_size
+        
+        # number of masked patches for the entire image; assumes square input size
+        self.token_count = self.rand_size ** 2
+        
+        # number of masked patches to actually mask 
+        self.mask_count = int(np.ceil(self.token_count * self.mask_ratio))
+        
+    def __call__(self):
+        ### start here  
+        mask_idx = np.random.permutation(self.token_count)[:self.mask_count]
+        mask = np.zeros(self.token_count, dtype=int)
+        mask[mask_idx] = 1
+        
+        mask = mask.reshape((self.rand_size, self.rand_size))
+        mask = mask.repeat(self.scale, axis=0).repeat(self.scale, axis=1)
+        
+        return mask
     
     
 class SimMIMTransform:
@@ -101,7 +151,7 @@ class SimMIMTransform:
                 ),  # 224 is commonly used to pretrain classifiers
             T.RandomHorizontalFlip(),
             _normalize
-        ])
+        ]) 
         
         
         #### start here go through MaskGenerator
