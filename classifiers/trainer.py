@@ -1,6 +1,7 @@
 import datetime
 import logging
 import time
+from abc import ABC
 from pathlib import Path
 from typing import Iterable, List, Optional, Tuple
 
@@ -21,23 +22,28 @@ from classifiers.visualize import plot_acc1, plot_loss, plot_lr
 log = logging.getLogger(__name__)
 
 
-class Trainer:
+class BaseTrainer(ABC):
     """Trainer TODO: comment"""
 
     def __init__(
         self,
+        model: nn.Module,
         output_dir: str,
         step_lr_on: str,
         device: torch.device = torch.device("cpu"),
         log_train_steps: int = 20,
+        amp_dtype: str = "float16",
         disable_amp: bool = False,
     ):
         """Constructor for the Trainer class
 
         Args:
+            model: pytorch model to train
             output_path: Path to save the train outputs
             use_cuda: Whether to use the GPU
         """
+        self.model = model
+
         if step_lr_on not in {"epochs", "steps"}:
             raise ValueError("step_lr_on must be either 'epochs' or 'steps'")
 
@@ -47,6 +53,13 @@ class Trainer:
         self.log_train_steps = log_train_steps
 
         self.step_lr_on = step_lr_on
+
+        if amp_dtype == "float16":
+            self.amp_dtype = torch.float16
+        elif amp_dtype == "bfloat16":
+            self.amp_dtype = torch.bfloat16
+        else:
+            raise ValueError("amp_dtype must be either 'float16' or 'bfloat16'")
 
         if disable_amp:
             self.enable_amp = False
@@ -63,7 +76,6 @@ class Trainer:
 
     def train(
         self,
-        model: nn.Module,
         criterion: nn.Module,
         dataloader_train: data.DataLoader,
         dataloader_val: data.DataLoader,
@@ -99,7 +111,7 @@ class Trainer:
 
         if checkpoint_path is not None:
             start_epoch = load_model_checkpoint(
-                checkpoint_path, model, optimizer, self.device, scheduler
+                checkpoint_path, self.model, optimizer, self.device, scheduler
             )
             log.info(
                 "NOTE: A checkpoint file was provided, the model will resume training at epoch %d",
@@ -124,14 +136,13 @@ class Trainer:
         lr_vals = []
         epoch_acc1 = []
         for epoch in range(start_epoch, epochs + 1):
-            model.train()
+            self.model.train()
 
             # Track the time it takes for one epoch (train and val)
             one_epoch_start_time = time.time()
 
             # Train one epoch
             train_loss_meter = self._train_one_epoch(
-                model,
                 criterion,
                 dataloader_train,
                 optimizer,
@@ -147,9 +158,7 @@ class Trainer:
             # Evaluate the model on the validation set
             log.info("\nEvaluating on validation set — epoch %d", epoch)
 
-            val_loss_meter, acc1_meter = self._evaluate(
-                model, criterion, dataloader_val
-            )
+            val_loss_meter, acc1_meter = self._evaluate(criterion, dataloader_val)
             val_loss.append(val_loss_meter.avg)
 
             if self.step_lr_on == "epochs":
@@ -180,8 +189,8 @@ class Trainer:
                     acc1,
                     epoch,
                 )
-                self._save_model(
-                    model, optimizer, epoch, save_path=best_path, lr_scheduler=scheduler
+                self.save_model(
+                    optimizer, epoch, save_path=best_path, lr_scheduler=scheduler
                 )
 
                 # delete the previous best model's checkpoint to save space
@@ -208,7 +217,11 @@ class Trainer:
                 ckpt_path = self.output_dir / "checkpoints" / f"checkpoint{epoch:04}.pt"
                 ckpt_path.parents[0].mkdir(parents=True, exist_ok=True)
                 self._save_model(
-                    model, optimizer, epoch, save_path=ckpt_path, lr_scheduler=scheduler
+                    self.model,
+                    optimizer,
+                    epoch,
+                    save_path=ckpt_path,
+                    lr_scheduler=scheduler,
                 )
 
             # Save and overwrite the checkpoint with the highest top 1 accuracy
@@ -225,7 +238,11 @@ class Trainer:
                     epoch,
                 )
                 self._save_model(
-                    model, optimizer, epoch, save_path=best_path, lr_scheduler=scheduler
+                    self.model,
+                    optimizer,
+                    epoch,
+                    save_path=best_path,
+                    lr_scheduler=scheduler,
                 )
 
                 # delete the previous best accuracy model's checkpoint
@@ -249,7 +266,6 @@ class Trainer:
 
     def _train_one_epoch(
         self,
-        model: nn.Module,
         criterion: nn.Module,
         dataloader_train: Iterable,
         optimizer: torch.optim.Optimizer,
@@ -262,7 +278,6 @@ class Trainer:
         """Train one epoch
 
         Args:
-            model: pytorch model to train
             criterion: loss function
             dataloader_train: dataloader for the training set
             optimizer: optimizer to update the models weights
@@ -278,23 +293,9 @@ class Trainer:
         epoch_loss = []
         epoch_lr = []  # Store lr every epoch so I can visualize the scheduler
         curr_lr = None
-        for steps, (samples, targets) in enumerate(dataloader_train, 1):
-            samples = samples.to(self.device)
-            targets = targets.to(self.device)
+        for steps, batch in enumerate(dataloader_train, 1):
 
-            with torch.autocast(
-                device_type=self.device.type,
-                dtype=torch.bfloat16,  # torch.float16,
-                enabled=self.enable_amp,
-            ):
-                # (b, num_classes)
-                preds = model(samples)
-
-                loss = criterion(preds, targets)
-
-                if grad_accum_steps > 1:
-                    # Scale the loss by the number of accumulation steps to average the gradients
-                    loss = loss / grad_accum_steps
+            samples, targets, preds, loss = self.train_step(batch, criterion, grad_accum_steps)
 
             acc1, acc5 = topk_accuracy(preds, targets, topk=(1, 5))
             losses.update(
@@ -317,13 +318,13 @@ class Trainer:
                     # Unscales the gradients of optimizer's assigned params in-place and clip as usual
                     if max_norm is not None:
                         scaler.unscale_(optimizer)
-                        nn.utils.clip_grad_norm_(model.parameters(), max_norm)
+                        nn.utils.clip_grad_norm_(self.model.parameters(), max_norm)
 
                     scaler.step(optimizer)
                     scaler.update()
                 else:
                     if max_norm is not None:
-                        nn.utils.clip_grad_norm_(model.parameters(), max_norm)
+                        nn.utils.clip_grad_norm_(self.model.parameters(), max_norm)
                     optimizer.step()
 
                 optimizer.zero_grad()
@@ -372,14 +373,12 @@ class Trainer:
     @torch.no_grad()
     def _evaluate(
         self,
-        model: nn.Module,
         criterion: nn.Module,
         dataloader_val: Iterable,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """A single forward pass to evaluate the val set after training an epoch
 
         Args:
-            model: Model to train
             criterion: Loss function; only used to inspect the loss on the val set,
                        not used for backpropagation
             dataloader_val: Dataloader for the validation set
@@ -391,7 +390,7 @@ class Trainer:
 
         # NOTE: evaluate
         loss, top1 = evaluate(
-            model,
+            self.model,
             dataloader_val,
             criterion,
             device=self.device,
@@ -401,14 +400,14 @@ class Trainer:
 
     def _save_model(
         self,
-        model,
         optimizer,
         current_epoch,
         save_path,
         lr_scheduler: Optional[nn.Module] = None,
     ):
+        """Saves the model, optimizer, next epoch, and optionally the lr scheduler to a checkpoint file"""
         save_dict = {
-            "model": model.state_dict(),
+            "model": self.model.state_dict(),
             "optimizer": optimizer.state_dict(),
             "epoch": current_epoch
             + 1,  # + 1 bc when we resume training we want to start at the next step
@@ -420,3 +419,65 @@ class Trainer:
             save_dict,
             save_path,
         )
+
+
+class ClassificationTrainer(BaseTrainer):
+    """Trainer for classification models"""
+
+    def __init__(self, **base_kwargs):
+        super().__init__(**base_kwargs)
+
+    def train_step(self, batch, criterion, grad_accum_steps):
+        samples, targets = batch
+        samples = samples.to(self.device)
+        targets = targets.to(self.device)
+
+        with torch.autocast(
+            device_type=self.device.type,
+            dtype=self.amp_dtype,
+            enabled=self.enable_amp,
+        ):
+            # (b, num_classes)
+            preds = self.model(samples)
+
+            loss = criterion(preds, targets)
+
+            if grad_accum_steps > 1:
+                # Scale the loss by the number of accumulation steps to average the gradients
+                loss = loss / grad_accum_steps
+
+        return samples, targets, preds, loss
+
+
+def create_trainer(
+    trainer_type: str,
+    model: nn.Module,
+    output_dir: str,
+    step_lr_on: str,
+    device: torch.device = torch.device("cpu"),
+    log_train_steps: int = 20,
+    amp_dtype: str = "float16",
+    disable_amp: bool = False,
+):
+    """Initializes the trainer class based on the task type
+
+    Args:
+        trainer_type: the type of trainer to use; either "classification" or "ssl"
+        see the Trainer subclass for more details on the specific arguments
+    """
+    if trainer_type == "classification":
+        return ClassificationTrainer(
+            model=model,
+            output_dir=output_dir,
+            step_lr_on=step_lr_on,
+            device=device,
+            log_train_steps=log_train_steps,
+            amp_dtype=amp_dtype,
+            disable_amp=disable_amp,
+        )
+    elif trainer_type == "simmim":
+        return SimMIMTrainer()  # TODO: intialize
+    else:
+        raise ValueError(f"Unknown trainer type: {trainer_type}")
+
+    ### start her build trainer class and test swin

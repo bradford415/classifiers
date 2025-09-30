@@ -1179,10 +1179,7 @@ class SwinTransformerSimMIM(SwinTransformer):
     Paper: https://arxiv.org/pdf/2111.09886
     """
 
-    def __init__(
-        self,
-        **swin_kwargs
-    ):
+    def __init__(self, **swin_kwargs):
         """Initializes the SwinTransformer for SimMIM pretraining
 
         Args:
@@ -1196,16 +1193,16 @@ class SwinTransformerSimMIM(SwinTransformer):
 
         # create a single masked_token with the same embedding dimension
         # as the SwinTransformer patchification (1, 1, patch_emb_dim); during the forward
-        # pass, the token will be expanded to the batch size and number of patches 
+        # pass, the token will be expanded to the batch size and number of patches
         # (b, num_patches, patch_emb_dim)
         self.mask_token = nn.Parameter(torch.zeros(1, 1, self.patch_emb_dim))
-        trunc_normal_(self.mask_token, mean=0., std=.02)
+        trunc_normal_(self.mask_token, mean=0.0, std=0.02)
 
     def forward(self, x, mask):
         """Train the SwinTransformer using self-supervised learning (SimMIM)
 
         Args:
-            TODO 
+            TODO
             x: the input image to be processed; dimensions are its original input size after
             transformations (i.e., resize to 224x224) (b, orig_c, orig_h, orig_w)
             mask: TODO
@@ -1214,21 +1211,21 @@ class SwinTransformerSimMIM(SwinTransformer):
         x = self.patch_embed(x)
 
         assert mask is not None
-        
+
         # extract the patches shape (L = sequence length/number of patches)
         B, L, _ = x.shape
 
         # expand the single mask token to the batch size and number of patches; expand
         # only creates a view so the memory is not copied, this means every masked patch
-        # points to the same underlying parameters as the singular mask token initially 
+        # points to the same underlying parameters as the singular mask token initially
         # created int __init__(); operations on any masked patch will be accounted for in
-        # backprop and the single mask tokens parameters will be updated accordingly 
+        # backprop and the single mask tokens parameters will be updated accordingly
         # (I think autograd sums the gradients from each patch)
         mask_tokens = self.mask_token.expand(B, L, -1)
 
         # start here, run original simmim code to see what `mask` is
         w = mask.flatten(1).unsqueeze(-1).type_as(mask_tokens)
-        x = x * (1. - w) + mask_tokens * w
+        x = x * (1.0 - w) + mask_tokens * w
 
         if self.ape:
             x = x + self.absolute_pos_embed
@@ -1240,15 +1237,14 @@ class SwinTransformerSimMIM(SwinTransformer):
 
         x = x.transpose(1, 2)
         B, C, L = x.shape
-        H = W = int(L ** 0.5)
+        H = W = int(L**0.5)
         x = x.reshape(B, C, H, W)
         return x
 
-
     @torch.jit.ignore
     def no_weight_decay(self):
-        return super().no_weight_decay() | {'mask_token'}
-        
+        return super().no_weight_decay() | {"mask_token"}
+
 
 def build_swin(
     num_classes: int, img_size: Union[int, tuple], swin_params: dict[str, any]

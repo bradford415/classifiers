@@ -5,8 +5,11 @@
 # to quickly run the code as well as sets num_workers=0
 dev_mode: False
 
-# using amp is determined by device but one can override it here; True = disable amp
-disable_amp: False
+amp:
+  # using amp is determined by device but one can override it here; True = disable amp
+  disable_amp: False
+
+  amp_dtype: "float16" # "float16" or "bfloat16"
 
 
 # Base directory for output files

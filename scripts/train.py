@@ -12,23 +12,13 @@ from torch.utils.data import DataLoader
 from classifiers.dataset.imagenet import build_imagenet
 from classifiers.models.create import create_classifier
 from classifiers.solvers.build import build_solvers
-from classifiers.trainer import Trainer
+from classifiers.trainer import create_trainer
 from classifiers.utils import reproduce
 
 dataset_map: Dict[str, Any] = {"ImageNet": build_imagenet}
 
 # Initialize the root logger
 log = logging.getLogger(__name__)
-
-
-def main(base_config_path: str, model_config_path: str):
-    """Entrypoint for the project
-
-    Args:
-        base_config_path: path to the desired configuration file
-        model_config_path: path to the detection model configuration file
-
-    """
 
 
 def main(
@@ -233,17 +223,28 @@ def main(
         "total effective steps (steps * epochs // grad_accum_steps): %d", total_steps
     )
 
-    trainer = Trainer(
+    amp_params = base_config["amp"]
+
+    if "simmim" in classifier_name:
+        trainer_type = "simmim"
+    else:
+        trainer_type = "classification"
+
+    # initalize the model trainer based on the type of deep-learning task;
+    # currently supports `classification` training and `simmim` pretraining
+    trainer = create_trainer(
+        trainer_type=trainer_type,
+        model=model,
         output_dir=str(output_path),
         step_lr_on=solver_config["lr_scheduler"]["step_lr_on"],
         device=device,
         log_train_steps=base_config["log_train_steps"],
-        disable_amp=base_config["disable_amp"],
+        amp_dtype=amp_params["amp_dtype"],
+        disable_amp=amp_params["disable_amp"],
     )
 
     # Build trainer args used for the training
     trainer_args = {
-        "model": model,
         "criterion": criterion,
         "dataloader_train": dataloader_train,
         "dataloader_val": dataloader_val,
