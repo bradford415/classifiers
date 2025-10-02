@@ -1202,12 +1202,12 @@ class SwinTransformerSimMIM(SwinTransformer):
         """Train the SwinTransformer using self-supervised learning (SimMIM)
 
         Args:
-            TODO
             x: the input image to be processed; dimensions are its original input size after
-            transformations (i.e., resize to 224x224) (b, orig_c, orig_h, orig_w)
-            mask: TODO
+            transformations (e.g., resize to 224x224) (b, c, h, w)
+            mask: a binary mask (1 = masked, 0 = visible) of shape (b, num_patches, num_patches) 
+                   which is the shape of the patchified image
         """
-        # embed image into patches (b, num_patches, patch_emb_dim) TODO verify this shape
+        # embed image into flattened patches using a cnn (b, num_patches, patch_emb_dim)
         x = self.patch_embed(x)
 
         assert mask is not None
@@ -1218,13 +1218,19 @@ class SwinTransformerSimMIM(SwinTransformer):
         # expand the single mask token to the batch size and number of patches; expand
         # only creates a view so the memory is not copied, this means every masked patch
         # points to the same underlying parameters as the singular mask token initially
-        # created int __init__(); operations on any masked patch will be accounted for in
+        # created in __init__(); operations on any masked patch will be accounted for in
         # backprop and the single mask tokens parameters will be updated accordingly
         # (I think autograd sums the gradients from each patch)
+        # shape (b, num_patches, patch_embed_dim)
         mask_tokens = self.mask_token.expand(B, L, -1)
 
-        # start here, run original simmim code to see what `mask` is
+        # flatten the binary mask to (b, num_patches*num_patches, 1)
         w = mask.flatten(1).unsqueeze(-1).type_as(mask_tokens)
+        
+        assert w.shape[1] == mask_tokens.shape[1]
+        
+        
+        ### start here and figure out what this does, then continue with forward method
         x = x * (1.0 - w) + mask_tokens * w
 
         if self.ape:

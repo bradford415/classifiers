@@ -295,7 +295,9 @@ class BaseTrainer(ABC):
         curr_lr = None
         for steps, batch in enumerate(dataloader_train, 1):
 
-            samples, targets, preds, loss = self.train_step(batch, criterion, grad_accum_steps)
+            samples, targets, preds, loss = self.train_step(
+                batch, criterion, grad_accum_steps
+            )
 
             acc1, acc5 = topk_accuracy(preds, targets, topk=(1, 5))
             losses.update(
@@ -447,6 +449,48 @@ class ClassificationTrainer(BaseTrainer):
                 loss = loss / grad_accum_steps
 
         return samples, targets, preds, loss
+
+
+class SimMIMTrainer(BaseTrainer):
+    """Trainer for pretraining models with SimMIM"""
+
+    def __init__(self, **base_kwargs):
+        super().__init__(**base_kwargs)
+
+    def train_step(self, batch, criterion, grad_accum_steps):
+        """Performs a forward pass and computes the loss
+
+        Args:
+            batch: a sample from the dataloader which contains an image and mask
+                   where mask is a binary mask (1=mask, 0=visible) of shape (num_patches, num_patches) 
+                   which is the shape of the patchified image
+            criterion:  TODO: do i need this? loss function to compute the loss
+            grad_accum_steps: number of steps to accumulate gradients for
+        """
+        img, mask = batch
+        img = img.to(self.device, non_blocking=True) # TODO: read article on non_blocking 
+        mask = mask.to(self.device, non_blocking=True)
+
+        with torch.autocast(
+            device_type=self.device.type,
+            dtype=self.amp_dtype,
+            enabled=self.enable_amp,
+        ):
+            # (b, num_classes)
+            preds = self.model(img)
+
+            # TODO: figure out if I need a criterion and how to handle this
+
+            loss = criterion(preds, targets)
+
+            if grad_accum_steps > 1:
+                # Scale the loss by the number of accumulation steps to average the gradients
+                loss = loss / grad_accum_steps
+
+        return samples, targets, preds, loss
+
+
+### start here build simmim trainer
 
 
 def create_trainer(

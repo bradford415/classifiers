@@ -86,7 +86,7 @@ class MaskGenerator:
         """Initalize the MaskGenerator
 
         Args:
-            input_size: size of the input image after transformations
+            input_size: size of the input image after transformations; typically 192x192 or 224x224
             mask_patch_size: size of the patches to be masked; this is NOT related
                              to the Swin patch size e.g., Swin typically uses 4x4 patches;
                              must be divisible by input image size and model_patch_size must
@@ -122,7 +122,9 @@ class MaskGenerator:
 
         Returns:
             mask: a 2D binary mask of shape (num_patches, num_patches) (1 = masked, 0 = visible)
-                  where num_patches = input_size // model_patch_size
+                  where num_patches = input_size // model_patch_size;
+                  e.g., input = 192x192, mask_patch_size = 32x32, patch_size = 4x4
+                  then the returned mask will be 48x48
         """
         ### start here
         breakpoint()
@@ -138,6 +140,8 @@ class MaskGenerator:
         # and repeat across each axis for the number of patches in the each mask patch
         # to match the models patch resolution (num_patches, num_patches);
         # e.g., 4x4 patches, 32x32 masked patches -> 8 patches per mask patch -> 48x48 patch resolution
+        #       which corresponds to 192x192 -> patchify (4x4) -> 48x48 patches so now each
+        #       patch will have a boolean whether to mask or not
         mask = mask.reshape((self.rand_size, self.rand_size))
         mask = mask.repeat(self.scale, axis=0).repeat(self.scale, axis=1)
 
