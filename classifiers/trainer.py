@@ -462,13 +462,15 @@ class SimMIMTrainer(BaseTrainer):
 
         Args:
             batch: a sample from the dataloader which contains an image and mask
-                   where mask is a binary mask (1=mask, 0=visible) of shape (num_patches, num_patches) 
+                   where mask is a binary mask (1=mask, 0=visible) of shape (num_patches, num_patches)
                    which is the shape of the patchified image
             criterion:  TODO: do i need this? loss function to compute the loss
             grad_accum_steps: number of steps to accumulate gradients for
         """
         img, mask = batch
-        img = img.to(self.device, non_blocking=True) # TODO: read article on non_blocking 
+        img = img.to(
+            self.device, non_blocking=True
+        )  # TODO: read article on non_blocking
         mask = mask.to(self.device, non_blocking=True)
 
         with torch.autocast(
