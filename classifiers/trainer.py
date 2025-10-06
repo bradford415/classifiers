@@ -1,13 +1,14 @@
 import datetime
 import logging
 import time
-from abc import ABC
+from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Iterable, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 import torch
+from timm.scheduler.scheduler import Scheduler
 from torch import nn
 from torch.utils import data
 
@@ -28,6 +29,7 @@ class BaseTrainer(ABC):
     def __init__(
         self,
         model: nn.Module,
+        criterion: nn.Module,
         output_dir: str,
         step_lr_on: str,
         device: torch.device = torch.device("cpu"),
@@ -38,7 +40,8 @@ class BaseTrainer(ABC):
         """Constructor for the Trainer class
 
         Args:
-            model: pytorch model to train
+            model: pytorch model to be trained
+            criterion: the loss function to use for training
             output_path: Path to save the train outputs
             use_cuda: Whether to use the GPU
         """
@@ -94,8 +97,6 @@ class BaseTrainer(ABC):
         A model checkpoint is saved at user-specified intervals.
 
         Args:
-            model: pytorch model to be trained
-            criterion: the loss function to use for training
             dataloader_train: torch dataloader to loop through the train dataset
             dataloader_val: torch dataloader to loop through the val dataset
             optimizer: optimizer which determines how to update the weights
@@ -264,6 +265,11 @@ class BaseTrainer(ABC):
             total_time_str,
         )
 
+    @abstractmethod
+    def train_step(self, model):
+        """Predict"""
+        pass
+
     def _train_one_epoch(
         self,
         criterion: nn.Module,
@@ -289,6 +295,8 @@ class BaseTrainer(ABC):
         losses = AverageMeter()
         top1 = AverageMeter()
         top5 = AverageMeter()
+
+        num_steps_per_epoch = len(dataloader_train)
 
         epoch_loss = []
         epoch_lr = []  # Store lr every epoch so I can visualize the scheduler
@@ -343,7 +351,14 @@ class BaseTrainer(ABC):
                     if not isinstance(
                         scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau
                     ):
-                        scheduler.step()
+                        if isinstance(scheduler, Scheduler):
+                            # timm scheduler, need to pass in the number of steps that we've taken so far;
+                            # NOTE: we shouldn't have to take into account grad_accum_steps; it should
+                            #       make the same progress as if we were using grad_accum_steps
+                            scheduler.step_update((epoch-1) * num_steps_per_epoch + steps)
+                        else:
+                            # pytorch scheduler we just call step()  
+                            scheduler.step()
                     else:
                         scheduler.step(loss.item())
 
@@ -429,7 +444,7 @@ class ClassificationTrainer(BaseTrainer):
     def __init__(self, **base_kwargs):
         super().__init__(**base_kwargs)
 
-    def train_step(self, batch, criterion, grad_accum_steps):
+    def train_step(self, batch, grad_accum_steps):
         samples, targets = batch
         samples = samples.to(self.device)
         targets = targets.to(self.device)
@@ -442,7 +457,7 @@ class ClassificationTrainer(BaseTrainer):
             # (b, num_classes)
             preds = self.model(samples)
 
-            loss = criterion(preds, targets)
+            loss = self.criterion(preds, targets)
 
             if grad_accum_steps > 1:
                 # Scale the loss by the number of accumulation steps to average the gradients
@@ -457,14 +472,13 @@ class SimMIMTrainer(BaseTrainer):
     def __init__(self, **base_kwargs):
         super().__init__(**base_kwargs)
 
-    def train_step(self, batch, criterion, grad_accum_steps):
+    def train_step(self, batch, grad_accum_steps):
         """Performs a forward pass and computes the loss
 
         Args:
             batch: a sample from the dataloader which contains an image and mask
                    where mask is a binary mask (1=mask, 0=visible) of shape (num_patches, num_patches)
                    which is the shape of the patchified image
-            criterion:  TODO: do i need this? loss function to compute the loss
             grad_accum_steps: number of steps to accumulate gradients for
         """
         img, mask = batch
@@ -478,21 +492,14 @@ class SimMIMTrainer(BaseTrainer):
             dtype=self.amp_dtype,
             enabled=self.enable_amp,
         ):
-            # (b, num_classes)
-            preds = self.model(img)
-
-            # TODO: figure out if I need a criterion and how to handle this
-
-            loss = criterion(preds, targets)
+            # simim returns the loss directly
+            loss = self.model(img)
 
             if grad_accum_steps > 1:
                 # Scale the loss by the number of accumulation steps to average the gradients
                 loss = loss / grad_accum_steps
 
-        return samples, targets, preds, loss
-
-
-### start here build simmim trainer
+        return img, loss
 
 
 def create_trainer(

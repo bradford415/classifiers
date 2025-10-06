@@ -39,7 +39,7 @@ dataset:
   num_workers: 4
 
 train:
-  max_norm: 1.0
+  max_norm: 5.0
   
   # batches & epochs
   batch_size: 64
@@ -62,18 +62,25 @@ solver:
     name: "adamw"
 
     params:
-      lr: 0.0005 # NOTE: may have to scale lr like the do in code but unsure; i think since I handle gradietn accumulation different I don't
+      lr: 0.0001 # NOTE: may have to scale lr like the do in code but unsure; i think since I handle gradietn accumulation different I don't
+      eps: 1.e-8
+      betas: [0.9, 0.999]
       weight_decay: 0.05
 
-  # TODO: figure out which scheduler and optimizer swin uses
+  # SimMIM paper mentions cosine annealing for scheuduler but their ablation studies
+  # show th multistep LR achieves bettter performance Appendix B.; the default 800 epoch config
+  # also uses the multistep_lr
   lr_scheduler:
-    name: "warmup_cosine_decay"
+    name: "multistep_lr"
     step_lr_on: "steps" # step the lr after n "epochs" or "steps"
 
     params:
-      num_cycles: 1 # 1 => only one decay, no restarts
-      warmup_epochs: 20 # TODO might need to adjust based on num epochs I choose
-      warmup_min_lr: 5.e-6
+      warmup_epochs: 10 # TODO might need to adjust based on num epochs I choose
+      warmup_lr: 5.e-7
+      warmup_min_lr: 5.e-6 # is this needed?
+
+      # list of epochs to reduce the learning rate at by a factor of gamma (usually 0.1)
+      multisteps: [700,]
 
 
 # GPU parameters

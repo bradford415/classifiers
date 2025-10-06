@@ -2,6 +2,7 @@ import math
 from typing import Optional, Union
 
 import torch
+from torch import functional as F
 from torch import nn
 
 
@@ -963,7 +964,6 @@ class SwinTransformer(nn.Module):
         for layer in self.layers:
             x = layer(x)
 
-        ##### start here
         # layer norm across the feature dim (channels); nn.LayerNorm always operates on the last dimension;
         # this means that for shape (b, num_tokens, c), it will normalize across c, for every token in each batch
         x = self.norm(x)  # B L C
@@ -1270,19 +1270,19 @@ class SwinTransformerSimMIM(SwinTransformer):
     def no_weight_decay(self):
         return super().no_weight_decay() | {"mask_token"}
 
-    
+
 class SimMIM(nn.Module):
     """The SimMIM model which takes a modified Swin or ViT as the encoder"""
 
     def __init__(self, encoder: SwinTransformerSimMIM, encoder_stride: int):
         """Initialize the SimMIM model
-        
+
         Args:
             encoder: a modified Swin or ViT encoder which masks the patches then
                      encodes them like a normal encoder
-            encoder_stride: the downsample factor from the input image size to the 
+            encoder_stride: the downsample factor from the input image size to the
                             output feature map size; for Swin this typically 32
-                            e.g., 192 / 4 (patchification) -> 48 / 2 (stage 1) -> 24 / 2 (stage 2) 
+                            e.g., 192 / 4 (patchification) -> 48 / 2 (stage 1) -> 24 / 2 (stage 2)
                             -> 12 / 2 (stage 3) -> 6x6 feature map; therefore 192 / 6 = 32 or
                             4 * 2 * 2 * 2 = 32
         """
@@ -1291,47 +1291,82 @@ class SimMIM(nn.Module):
         self.encoder_stride = encoder_stride
 
         # Decoder:
-        # 1. Conv2d: Initialize a 1x1 cnn layer for each output patch of the encoder to decode 
-        #            each patch back into a region of pixels (e.g., 32x32x3); `num_features` is 
+        # Goal: predicts masked patches into the image space i.e., 1 patch -> 32x32x3 region of pixels
+        # 1. Conv2d: Initialize a 1x1 cnn layer for each output patch of the encoder to decode
+        #            each patch back into a region of pixels (e.g., 32x32x3); `num_features` is
         #            the final channel dim, while `out_channels` is essentially working backwards
         #            to compute the number of pixels an enocded patch represents - since the downsample
-        #            factor is 32, 1 enoced patch basically represents a 32x32x3 pixel region; so 
+        #            factor is 32, 1 enoced patch basically represents a 32x32x3 pixel region; so
         #            this conv2d is going from a single embedding (1x1x1024) to a (32x32x3) patch region
-        # 2. PixelShuffle: redistributes the channel dimension based on an upscale_factor to return to 
-        #                  a spatial dimension (b, c * r^2, h, w) -> (b, c, h * r, w * r); 
+        # 2. PixelShuffle: redistributes the channel dimension based on an upscale_factor to return to
+        #                  a spatial dimension (b, c * r^2, h, w) -> (b, c, h * r, w * r);
         #                  e.g., for a single patch (b, 32*32*3, 1, 1) -> (b, 3, 32, 32) and since
         #                  the kernel size is 1x1 conv2d operates independently on all patches;
         #                  this is a non learnable layer which is essentially a reshape + permute
-        ### start here
         self.decoder = nn.Sequential(
             nn.Conv2d(
                 in_channels=self.encoder.num_features,
-                out_channels=self.encoder_stride ** 2 * 3, kernel_size=1),
+                out_channels=self.encoder_stride**2 * 3,
+                kernel_size=1,
+            ),
             nn.PixelShuffle(self.encoder_stride),
         )
 
+        # set parameters for colorscale (RGB = 3) and the size of image patches
+        # during patchification (typically 4)
         self.in_chans = self.encoder.in_chans
         self.patch_size = self.encoder.patch_size
 
-    def forward(self, x, mask):
+    def forward(self, x: torch.Tensor, mask: torch.Tensor) -> float:
+        """Forward pass through the full SimMIM model
+
+        Args:
+            x: a batch of input images after data augmentations (b, c, h, w)
+            mask: a binary mask for which patches to mask (1 = mask, 0 = visible)
+                  shape (b, h/4, w/4) where 4 = patch size
+
+        Returns:
+            the l1 loss between masked pixels only, averaged by the number of masked pixels
+        """
+        # encode the image with masked patches (b, num_features, h/32, w/32)
         z = self.encoder(x, mask)
+
+        # reconstruct the pixels from all patches (even the non-masked patches)
+        # (b, 3, orig_h, orig_w)
         x_rec = self.decoder(z)
 
-        mask = mask.repeat_interleave(self.patch_size, 1).repeat_interleave(self.patch_size, 2).unsqueeze(1).contiguous()
-        loss_recon = F.l1_loss(x, x_rec, reduction='none')
+        # repeat the binary mask along the h & w dims to create a mask
+        # of the original image size (b, 1, orig_h, orig_w)
+        # NOTE: repeat_interleave repeats individual elements along a dimension while
+        #       `repeat` repeats the entire tensors
+        mask = (
+            mask.repeat_interleave(self.patch_size, 1)
+            .repeat_interleave(self.patch_size, 2)
+            .unsqueeze(1)
+            .contiguous()
+        )
+
+        # compute the elementwise l1 loss (|x - x_p|) between the original image (after data transforms)
+        # and full reconstructed image (b, c, h, w); do not reduce so we can 0 out the pixels' loss that are
+        # not masked so we compute the loss only only on the pixels that ARE masked
+        loss_recon = F.l1_loss(x, x_rec, reduction="none")
+
+        # zero out the loss at the pixel locations that are not masked so they do not contribute to
+        # the loss, then average across the number of masked pixels
+        # (self.in_chans is to account for each rgb channel)
         loss = (loss_recon * mask).sum() / (mask.sum() + 1e-5) / self.in_chans
         return loss
 
     @torch.jit.ignore
     def no_weight_decay(self):
-        if hasattr(self.encoder, 'no_weight_decay'):
-            return {'encoder.' + i for i in self.encoder.no_weight_decay()}
+        if hasattr(self.encoder, "no_weight_decay"):
+            return {"encoder." + i for i in self.encoder.no_weight_decay()}
         return {}
 
     @torch.jit.ignore
     def no_weight_decay_keywords(self):
-        if hasattr(self.encoder, 'no_weight_decay_keywords'):
-            return {'encoder.' + i for i in self.encoder.no_weight_decay_keywords()}
+        if hasattr(self.encoder, "no_weight_decay_keywords"):
+            return {"encoder." + i for i in self.encoder.no_weight_decay_keywords()}
         return {}
 
 
