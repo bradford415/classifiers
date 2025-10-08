@@ -9,13 +9,13 @@ from fire import Fire
 from torch import nn
 from torch.utils.data import DataLoader
 
-from classifiers.dataset.imagenet import build_imagenet
+from classifiers.dataset.imagenet import build_imagenet_simmim
 from classifiers.models.create import create_classifier
 from classifiers.solvers.build import build_solvers
 from classifiers.trainer import create_trainer
 from classifiers.utils import reproduce
 
-dataset_map: Dict[str, Any] = {"ImageNet": build_imagenet}
+dataset_map: Dict[str, Any] = {"ImageNetSimMIM": build_imagenet_simmim}
 
 # Initialize the root logger
 log = logging.getLogger(__name__)
@@ -123,11 +123,6 @@ def main(
         "shuffle": True,
         "num_workers": base_config["dataset"]["num_workers"] if not dev_mode else 0,
     }
-    val_kwargs = {
-        "batch_size": val_batch_size,
-        "shuffle": False,
-        "num_workers": base_config["dataset"]["num_workers"] if not dev_mode else 0,
-    }
 
     # Gradient accumulation;
     # accumulate (sum) gradients for effective//batch_size steps before updating the weights;
@@ -139,6 +134,8 @@ def main(
         raise ValueError(
             "grad_accum_bs must be divisible by batch_size and greater than or equal to batch_size"
         )
+
+    #### start here, build simmim train script
 
     # Set device specific characteristics
     use_cpu = False
@@ -217,6 +214,8 @@ def main(
         # NOTE: does not really make sense to have a backbone_lr and optimizer strategy
         #       like in my detectors repo since the backbone is just the classifier
     )
+
+    breakpoint()
 
     total_steps = (len(dataloader_train) * epochs) // grad_accum_steps
     log.info(

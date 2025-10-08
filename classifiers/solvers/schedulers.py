@@ -1,9 +1,9 @@
 import math
 
 import torch
+from timm.scheduler.scheduler import Scheduler
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LambdaLR
-from timm.scheduler.scheduler import Scheduler
 
 
 class MultiStepLRScheduler(Scheduler):
@@ -11,9 +11,18 @@ class MultiStepLRScheduler(Scheduler):
     e.g., milestones = [20, 40] epochs; this is different then StepLR because this reduces
     the learning rate at regularly intervals e.g., every 20 epochs
     """
-    def __init__(self, optimizer: torch.optim.Optimizer, milestones, gamma=0.1, warmup_t=0, warmup_lr_init=0, t_in_epochs=True) -> None:
+
+    def __init__(
+        self,
+        optimizer: torch.optim.Optimizer,
+        milestones,
+        gamma=0.1,
+        warmup_t=0,
+        warmup_lr_init=0,
+        t_in_epochs=True,
+    ) -> None:
         """Initalize the learning rate scheduler
-        
+
         Args:
             optimizer: torch optimizer to update w/ the learning rate to be updated
             milestones: list of epochs/steps to reduce the learning rate at
@@ -23,31 +32,36 @@ class MultiStepLRScheduler(Scheduler):
             t_in_epochs: if True, milestones and warmup_t are in epochs; if False, they are in steps
         """
         super().__init__(optimizer, param_group_field="lr")
-        
+
         self.milestones = milestones
         self.gamma = gamma
         self.warmup_t = warmup_t
         self.warmup_lr_init = warmup_lr_init
         self.t_in_epochs = t_in_epochs
-        
+
         # self.base_values is defined as the base learning rate for each param group;
         # e.g., in the default case self.basE_values = [0.0001, 0.0001] for two param groups
         # (one with weight decay and one without)
-        
+
         # calcluate the number of warmup steps
         if self.warmup_t:
-            self.warmup_steps = [(v - warmup_lr_init) / self.warmup_t for v in self.base_values]
+            self.warmup_steps = [
+                (v - warmup_lr_init) / self.warmup_t for v in self.base_values
+            ]
             super().update_groups(self.warmup_lr_init)
         else:
             self.warmup_steps = [1 for _ in self.base_values]
-        
+
         assert self.warmup_t <= min(self.milestones)
-    
+
     def _get_lr(self, t):
         if t < self.warmup_t:
             lrs = [self.warmup_lr_init + t * s for s in self.warmup_steps]
         else:
-            lrs = [v * (self.gamma ** bisect_right(self.milestones, t)) for v in self.base_values]
+            lrs = [
+                v * (self.gamma ** bisect_right(self.milestones, t))
+                for v in self.base_values
+            ]
         return lrs
 
     def get_epoch_values(self, epoch: int):
@@ -222,7 +236,7 @@ def create_multistep_lr_scheduler(
     """
     warmup_steps = int(warmup_epochs * num_steps_per_epoch)
     multi_steps = [i * num_steps_per_epoch for i in multisteps]
-    
+
     return MultiStepLRScheduler(
         optimizer=optimizer,
         milestones=multi_steps,

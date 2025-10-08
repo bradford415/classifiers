@@ -9,10 +9,10 @@ from classifiers.solvers.schedulers import MultiStepLRScheduler
 log = logging.getLogger(__name__)
 
 from classifiers.solvers.schedulers import (
+    create_multistep_lr_scheduler,
     make_cosine_anneal,
     reduce_lr_on_plateau,
     warmup_cosine_decay,
-    create_multistep_lr_scheduler,
 )
 
 optimizer_map = {
@@ -143,7 +143,7 @@ def build_solvers(
 
     # TODO: impelement configs for warmup_cosine_decay; i think this is already done?
     # Build scheduler
-    
+
     #### start here, try to build scheduler
     if scheduler_name in scheduler_map:
         scheduler_params["num_epochs"] = num_epochs

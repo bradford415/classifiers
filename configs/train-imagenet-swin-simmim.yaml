@@ -11,8 +11,6 @@ amp:
 
   amp_dtype: "float16" # "float16" or "bfloat16"
 
-
-
 # Base directory for output files
 output_dir: "output"
 
@@ -27,16 +25,25 @@ log_train_steps: 60
 
 # Parameters for the dataset class
 dataset:
+  # whether to use simmim pretraining (True) or regular classification training (False)
+  simmim: True
  
   # Path to the root of the dataset; detects which path to use based on device
   root: "/mnt/d/datasets/imagenet" # linux/windows path
   root_mac: "/Users/bsele/datasets/imagenet-2012" # mac path
 
   # The image size to resize and crop images to; e.g., 224 = 224x224
-  image_size: 224
+  image_size: 192
 
   # Number of CPU processes the next sample in the dataset; use 0 to only use the main process
   num_workers: 4
+
+  # the percentages of patches to mask in thep atchified image
+  mask_ratio: 0.6
+
+  # the size of the masked patches; 
+  # e.g., mask_patch size=32 & patch_size=4 -> 32/4 = 8 patches are masked for 1 masked patch
+  mask_patch_size: 32
 
 train:
   max_norm: 5.0
@@ -45,7 +52,7 @@ train:
   batch_size: 64
   effective_batch_size: 1024  # batch_size * gradient_accumulation_steps
   validation_batch_size: 32
-  epochs: 300
+  epochs: 800
 
   # Number of epochs to checkpoint after; use 'null' to turn off checkpointing
   ckpt_epochs: 15

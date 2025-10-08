@@ -355,9 +355,11 @@ class BaseTrainer(ABC):
                             # timm scheduler, need to pass in the number of steps that we've taken so far;
                             # NOTE: we shouldn't have to take into account grad_accum_steps; it should
                             #       make the same progress as if we were using grad_accum_steps
-                            scheduler.step_update((epoch-1) * num_steps_per_epoch + steps)
+                            scheduler.step_update(
+                                (epoch - 1) * num_steps_per_epoch + steps
+                            )
                         else:
-                            # pytorch scheduler we just call step()  
+                            # pytorch scheduler we just call step()
                             scheduler.step()
                     else:
                         scheduler.step(loss.item())
