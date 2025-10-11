@@ -126,9 +126,8 @@ class MaskGenerator:
                   e.g., input = 192x192, mask_patch_size = 32x32, patch_size = 4x4
                   then the returned mask will be 48x48
         """
-        ### start here
-        breakpoint()
-        # randomly select indices of masked patches to mask TODO put shape
+        # randomly select indices of masked patches to mask (self.mask_count,)
+        # self.token_count is the total number of patches in the image
         mask_idx = np.random.permutation(self.token_count)[: self.mask_count]
 
         # boolen mask where 1 indicates the patch is masked and 0 indicates it is visible
@@ -223,21 +222,33 @@ class SimMIMTransform:
         return img, mask
 
 
-def collate_fn(batch):
-    """Custom collate function to handle batches where each sample is a tuple of (image, mask)
+def collate_fn_simmim(batch: list[tuple[]]):
+    """Custom collate function to handle batches where each sample is a 
+    tuple of ((image, mask), target)
 
     Args:
-        batch: a list of samples where each sample is a tuple (image, mask)
+        batch: a list of samples for simmim where each sample is a tuple ((image, mask), target)
+               - image: the transformed image tensor (c, h, w)
+               - mask: the binary mask representing which patches to mask (1 = masked, 0 = visible)
+                       (num_patches, num_patches)
+                - target: the class label of the image (ignored during simmim pretraining)
+    
+    Returns:
+        a 3 element list containing:
+            1. a batch of images (b, c, h, w)
+            2. a batch of masks (b, num_patches, num_patches)
+            3. a batch of class labels (b,); again, I think this is ignored in simmim pretraining
     """
-    breakpoint()
     if not isinstance(batch[0][0], tuple):
         # use the standard pytorch collate function if the first element is not a tuple
         return default_collate(batch)
     else:
         # simmmim case
-        # TODO comment this
         batch_num = len(batch)
         ret = []
+        
+        # loop through the image and mask tuple to create a two element list containing
+        # a batch of images (b, c, h, w) and a batch of masks (b, num_patches, num_patches)
         for item_idx in range(len(batch[0][0])):
             if batch[0][0][item_idx] is None:
                 ret.append(None)
@@ -245,6 +256,8 @@ def collate_fn(batch):
                 ret.append(
                     default_collate([batch[i][0][item_idx] for i in range(batch_num)])
                 )
+
+        # create a batch of class labels for each image (b,)
         ret.append(default_collate([batch[i][1] for i in range(batch_num)]))
         return ret
 

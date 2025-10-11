@@ -5,7 +5,7 @@
 ---
 
 # the classifier to train
-classifier: "swin-b"
+backbone: "swin-b"
 
 encoder_stride: 32
 
@@ -19,7 +19,7 @@ params:
 
   # the number of square patches in the window; attention is computed locally within
   # these windows; e.g., 7 = 7x7 patches in a window
-  window_size: 7
+  window_size: 6
 
   # whether to normalize after the patch embedding
   patch_norm: True

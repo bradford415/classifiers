@@ -29,9 +29,9 @@ class BaseTrainer(ABC):
     def __init__(
         self,
         model: nn.Module,
-        criterion: nn.Module,
         output_dir: str,
         step_lr_on: str,
+        criterion: Optional[nn.Module] = None,
         device: torch.device = torch.device("cpu"),
         log_train_steps: int = 20,
         amp_dtype: str = "float16",
@@ -46,6 +46,7 @@ class BaseTrainer(ABC):
             use_cuda: Whether to use the GPU
         """
         self.model = model
+        self.criterion = criterion
 
         if step_lr_on not in {"epochs", "steps"}:
             raise ValueError("step_lr_on must be either 'epochs' or 'steps'")
@@ -77,202 +78,26 @@ class BaseTrainer(ABC):
         #       seems to be a long standing bug: https://github.com/pytorch/pytorch/issues/40497
         # self.enable_amp = False
 
+    @abstractmethod
     def train(
         self,
-        criterion: nn.Module,
-        dataloader_train: data.DataLoader,
-        dataloader_val: data.DataLoader,
-        optimizer: torch.optim.Optimizer,
-        scheduler: torch.optim.lr_scheduler,
-        grad_accum_steps: int = 1,
-        max_norm: float = 1.0,
-        start_epoch: int = 1,
-        epochs: int = 100,
-        ckpt_epochs: int = 10,
-        checkpoint_path: Optional[str] = None,
+        *args,
+        **kwargs,
     ):
         """Trains a model
 
         Specifically, this method trains a model for n epochs and evaluates on the validation set.
         A model checkpoint is saved at user-specified intervals.
-
-        Args:
-            dataloader_train: torch dataloader to loop through the train dataset
-            dataloader_val: torch dataloader to loop through the val dataset
-            optimizer: optimizer which determines how to update the weights
-            scheduler: scheduler which determines how to change the learning rate
-            grad_accum_steps: TODO
-            max_norm: TODO
-            start_epoch: epoch to start the training on; starting at 1 is a good default because it makes
-                         checkpointing and calculations more intuitive
-            epochs: the epoch to end training on; unless starting from a check point, this will be the number of epochs to train for
-            ckpt_every: save the model after n epochs
         """
-        log.info("\ntraining started\n")
-
-        if checkpoint_path is not None:
-            start_epoch = load_model_checkpoint(
-                checkpoint_path, self.model, optimizer, self.device, scheduler
-            )
-            log.info(
-                "NOTE: A checkpoint file was provided, the model will resume training at epoch %d",
-                start_epoch,
-            )
-
-        if self.enable_amp:
-            log.info("using mixed precision training")
-            scaler = torch.amp.GradScaler(self.device.type)
-        else:
-            scaler = None
-
-        total_train_start_time = time.time()
-
-        last_best_path = None
-
-        # NOTE: the dataloaders can be visualized with scripts/visualizations/dataloaders.py
-
-        best_acc = 0.0
-        train_loss = []
-        val_loss = []
-        lr_vals = []
-        epoch_acc1 = []
-        for epoch in range(start_epoch, epochs + 1):
-            self.model.train()
-
-            # Track the time it takes for one epoch (train and val)
-            one_epoch_start_time = time.time()
-
-            # Train one epoch
-            train_loss_meter = self._train_one_epoch(
-                criterion,
-                dataloader_train,
-                optimizer,
-                scheduler,
-                epoch,
-                grad_accum_steps,
-                max_norm,
-                scaler,
-            )
-
-            train_loss.append(train_loss_meter.avg)
-
-            # Evaluate the model on the validation set
-            log.info("\nEvaluating on validation set — epoch %d", epoch)
-
-            val_loss_meter, acc1_meter = self._evaluate(criterion, dataloader_val)
-            val_loss.append(val_loss_meter.avg)
-
-            if self.step_lr_on == "epochs":
-                curr_lr = round(optimizer.state_dict()["param_groups"][0]["lr"], 8)
-                self.learning_rate.append(curr_lr)
-
-            # Increment lr scheduler every epoch
-            if scheduler is not None and self.step_lr_on == "epochs":
-                if not isinstance(
-                    scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau
-                ):
-                    scheduler.step()
-                else:
-                    scheduler.step(val_loss[-1])
-
-            acc1 = acc1_meter.avg.item()
-            epoch_acc1.append(acc1)
-
-            if acc1 > best_acc:
-                best_acc = acc1
-
-                acc_str = f"{acc1:.2f}".replace(".", "-")
-                best_path = self.output_dir / "checkpoints" / f"best_acc1_{acc_str}.pt"
-                best_path.parents[0].mkdir(parents=True, exist_ok=True)
-
-                log.info(
-                    "new best top 1 accuracy of %.2f found at epoch %d; saving checkpoint",
-                    acc1,
-                    epoch,
-                )
-                self.save_model(
-                    optimizer, epoch, save_path=best_path, lr_scheduler=scheduler
-                )
-
-                # delete the previous best model's checkpoint to save space
-                if last_best_path is not None:
-                    last_best_path.unlink(missing_ok=True)
-                last_best_path = best_path
-
-            plot_loss(train_loss, val_loss, save_dir=str(self.output_dir))
-            plot_acc1(epoch_acc1, save_dir=str(self.output_dir))
-
-            # Create csv file of training stats per epoch
-            train_dict = {
-                "epoch": list(np.arange(start_epoch, epoch + 1)),
-                "train_loss": train_loss,
-                "val_loss": val_loss,
-                "acc1": epoch_acc1,
-            }
-            pd.DataFrame(train_dict).round(5).to_csv(
-                self.output_dir / "train_stats.csv", index=False
-            )
-
-            # Save the model every ckpt_epochs
-            if (epoch) % ckpt_epochs == 0:
-                ckpt_path = self.output_dir / "checkpoints" / f"checkpoint{epoch:04}.pt"
-                ckpt_path.parents[0].mkdir(parents=True, exist_ok=True)
-                self._save_model(
-                    self.model,
-                    optimizer,
-                    epoch,
-                    save_path=ckpt_path,
-                    lr_scheduler=scheduler,
-                )
-
-            # Save and overwrite the checkpoint with the highest top 1 accuracy
-            if round(acc1, 4) > round(best_acc, 4):
-                best_acc = acc1
-
-                acc1_str = f"{acc1*100:.2f}".replace(".", "-")
-                best_path = self.output_dir / "checkpoints" / f"best_acc_{acc1_str}.pt"
-                best_path.parents[0].mkdir(parents=True, exist_ok=True)
-
-                log.info(
-                    "new best top 1 accuracy of %.2f found at epoch %d; saving checkpoint",
-                    acc1 * 100,
-                    epoch,
-                )
-                self._save_model(
-                    self.model,
-                    optimizer,
-                    epoch,
-                    save_path=best_path,
-                    lr_scheduler=scheduler,
-                )
-
-                # delete the previous best accuracy model's checkpoint
-                if last_best_path is not None:
-                    last_best_path.unlink(missing_ok=True)
-                last_best_path = best_path
-
-            # Current epoch time (train/val)
-            one_epoch_time = time.time() - one_epoch_start_time
-            one_epoch_time_str = str(datetime.timedelta(seconds=int(one_epoch_time)))
-            log.info("\nEpoch time  (h:mm:ss): %s", one_epoch_time_str)
-
-        # Entire training time
-        total_time = time.time() - total_train_start_time
-        total_time_str = str(datetime.timedelta(seconds=int(total_time)))
-        log.info(
-            "Training time for %d epochs (h:mm:ss): %s ",
-            start_epoch - epochs,
-            total_time_str,
-        )
+        pass
 
     @abstractmethod
-    def train_step(self, model):
-        """Predict"""
+    def train_step(self, batch, grad_accum_steps):
+        """Predict and compute the loss for a single batch"""
         pass
 
     def _train_one_epoch(
         self,
-        criterion: nn.Module,
         dataloader_train: Iterable,
         optimizer: torch.optim.Optimizer,
         scheduler: torch.optim.lr_scheduler,
@@ -284,7 +109,6 @@ class BaseTrainer(ABC):
         """Train one epoch
 
         Args:
-            criterion: loss function
             dataloader_train: dataloader for the training set
             optimizer: optimizer to update the models weights
             scheduler: learning rate scheduler to update the learning rate
@@ -303,9 +127,7 @@ class BaseTrainer(ABC):
         curr_lr = None
         for steps, batch in enumerate(dataloader_train, 1):
 
-            samples, targets, preds, loss = self.train_step(
-                batch, criterion, grad_accum_steps
-            )
+            samples, targets, preds, loss = self.train_step(batch, grad_accum_steps)
 
             acc1, acc5 = topk_accuracy(preds, targets, topk=(1, 5))
             losses.update(
@@ -446,6 +268,192 @@ class ClassificationTrainer(BaseTrainer):
     def __init__(self, **base_kwargs):
         super().__init__(**base_kwargs)
 
+    def train(
+        self,
+        dataloader_train: data.DataLoader,
+        dataloader_val: data.DataLoader,
+        optimizer: torch.optim.Optimizer,
+        scheduler: torch.optim.lr_scheduler,
+        grad_accum_steps: int = 1,
+        max_norm: float = 1.0,
+        start_epoch: int = 1,
+        epochs: int = 100,
+        ckpt_epochs: int = 10,
+        checkpoint_path: Optional[str] = None,
+    ):
+        """Trains a model
+
+        Specifically, this method trains a model for n epochs and evaluates on the validation set.
+        A model checkpoint is saved at user-specified intervals.
+
+        Args:
+            dataloader_train: torch dataloader to loop through the train dataset
+            dataloader_val: torch dataloader to loop through the val dataset
+            optimizer: optimizer which determines how to update the weights
+            scheduler: scheduler which determines how to change the learning rate
+            grad_accum_steps: TODO
+            max_norm: TODO
+            start_epoch: epoch to start the training on; starting at 1 is a good default because it makes
+                         checkpointing and calculations more intuitive
+            epochs: the epoch to end training on; unless starting from a check point, this will be the number of epochs to train for
+            ckpt_every: save the model after n epochs
+        """
+        log.info("\ntraining started\n")
+
+        if checkpoint_path is not None:
+            start_epoch = load_model_checkpoint(
+                checkpoint_path, self.model, optimizer, self.device, scheduler
+            )
+            log.info(
+                "NOTE: A checkpoint file was provided, the model will resume training at epoch %d",
+                start_epoch,
+            )
+
+        if self.enable_amp:
+            log.info("using mixed precision training")
+            scaler = torch.amp.GradScaler(self.device.type)
+        else:
+            scaler = None
+
+        total_train_start_time = time.time()
+
+        last_best_path = None
+
+        # NOTE: the dataloaders can be visualized with scripts/visualizations/dataloaders.py
+
+        best_acc = 0.0
+        train_loss = []
+        val_loss = []
+        lr_vals = []
+        epoch_acc1 = []
+        for epoch in range(start_epoch, epochs + 1):
+            self.model.train()
+
+            # Track the time it takes for one epoch (train and val)
+            one_epoch_start_time = time.time()
+
+            # Train one epoch
+            train_loss_meter = self._train_one_epoch(
+                dataloader_train,
+                optimizer,
+                scheduler,
+                epoch,
+                grad_accum_steps,
+                max_norm,
+                scaler,
+            )
+
+            train_loss.append(train_loss_meter.avg)
+
+            # Evaluate the model on the validation set
+            log.info("\nEvaluating on validation set — epoch %d", epoch)
+
+            val_loss_meter, acc1_meter = self._evaluate(dataloader_val)
+            val_loss.append(val_loss_meter.avg)
+
+            if self.step_lr_on == "epochs":
+                curr_lr = round(optimizer.state_dict()["param_groups"][0]["lr"], 8)
+                self.learning_rate.append(curr_lr)
+
+            # Increment lr scheduler every epoch
+            if scheduler is not None and self.step_lr_on == "epochs":
+                if not isinstance(
+                    scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau
+                ):
+                    scheduler.step()
+                else:
+                    scheduler.step(val_loss[-1])
+
+            acc1 = acc1_meter.avg.item()
+            epoch_acc1.append(acc1)
+
+            if acc1 > best_acc:
+                best_acc = acc1
+
+                acc_str = f"{acc1:.2f}".replace(".", "-")
+                best_path = self.output_dir / "checkpoints" / f"best_acc1_{acc_str}.pt"
+                best_path.parents[0].mkdir(parents=True, exist_ok=True)
+
+                log.info(
+                    "new best top 1 accuracy of %.2f found at epoch %d; saving checkpoint",
+                    acc1,
+                    epoch,
+                )
+                self.save_model(
+                    optimizer, epoch, save_path=best_path, lr_scheduler=scheduler
+                )
+
+                # delete the previous best model's checkpoint to save space
+                if last_best_path is not None:
+                    last_best_path.unlink(missing_ok=True)
+                last_best_path = best_path
+
+            plot_loss(train_loss, val_loss, save_dir=str(self.output_dir))
+            plot_acc1(epoch_acc1, save_dir=str(self.output_dir))
+
+            # Create csv file of training stats per epoch
+            train_dict = {
+                "epoch": list(np.arange(start_epoch, epoch + 1)),
+                "train_loss": train_loss,
+                "val_loss": val_loss,
+                "acc1": epoch_acc1,
+            }
+            pd.DataFrame(train_dict).round(5).to_csv(
+                self.output_dir / "train_stats.csv", index=False
+            )
+
+            # Save the model every ckpt_epochs
+            if (epoch) % ckpt_epochs == 0:
+                ckpt_path = self.output_dir / "checkpoints" / f"checkpoint{epoch:04}.pt"
+                ckpt_path.parents[0].mkdir(parents=True, exist_ok=True)
+                self._save_model(
+                    self.model,
+                    optimizer,
+                    epoch,
+                    save_path=ckpt_path,
+                    lr_scheduler=scheduler,
+                )
+
+            # Save and overwrite the checkpoint with the highest top 1 accuracy
+            if round(acc1, 4) > round(best_acc, 4):
+                best_acc = acc1
+
+                acc1_str = f"{acc1*100:.2f}".replace(".", "-")
+                best_path = self.output_dir / "checkpoints" / f"best_acc_{acc1_str}.pt"
+                best_path.parents[0].mkdir(parents=True, exist_ok=True)
+
+                log.info(
+                    "new best top 1 accuracy of %.2f found at epoch %d; saving checkpoint",
+                    acc1 * 100,
+                    epoch,
+                )
+                self._save_model(
+                    self.model,
+                    optimizer,
+                    epoch,
+                    save_path=best_path,
+                    lr_scheduler=scheduler,
+                )
+
+                # delete the previous best accuracy model's checkpoint
+                if last_best_path is not None:
+                    last_best_path.unlink(missing_ok=True)
+                last_best_path = best_path
+
+            # Current epoch time (train/val)
+            one_epoch_time = time.time() - one_epoch_start_time
+            one_epoch_time_str = str(datetime.timedelta(seconds=int(one_epoch_time)))
+            log.info("\nEpoch time  (h:mm:ss): %s", one_epoch_time_str)
+
+        # Entire training time
+        total_time = time.time() - total_train_start_time
+        total_time_str = str(datetime.timedelta(seconds=int(total_time)))
+        log.info(
+            "Training time for %d epochs (h:mm:ss): %s ",
+            start_epoch - epochs,
+            total_time_str,
+        )
+
     def train_step(self, batch, grad_accum_steps):
         samples, targets = batch
         samples = samples.to(self.device)
@@ -483,6 +491,8 @@ class SimMIMTrainer(BaseTrainer):
                    which is the shape of the patchified image
             grad_accum_steps: number of steps to accumulate gradients for
         """
+        breakpoint()
+        #### start here unpack the back properly
         img, mask = batch
         img = img.to(
             self.device, non_blocking=True
@@ -502,6 +512,172 @@ class SimMIMTrainer(BaseTrainer):
                 loss = loss / grad_accum_steps
 
         return img, loss
+
+    def train(
+        self,
+        dataloader_train: data.DataLoader,
+        optimizer: torch.optim.Optimizer,
+        scheduler: torch.optim.lr_scheduler,
+        grad_accum_steps: int = 1,
+        max_norm: float = 1.0,
+        start_epoch: int = 1,
+        epochs: int = 100,
+        ckpt_epochs: int = 10,
+        checkpoint_path: Optional[str] = None,
+    ):
+        """Pretrains a model using SimMIM ssl pretraining
+
+        Args:
+            dataloader_train: torch dataloader to loop through the train dataset
+            optimizer: optimizer which determines how to update the weights
+            scheduler: scheduler which determines how to change the learning rate
+            grad_accum_steps: TODO
+            max_norm: TODO
+            start_epoch: epoch to start the training on; starting at 1 is a good default because it makes
+                         checkpointing and calculations more intuitive
+            epochs: the epoch to end training on; unless starting from a check point, this will be the number of epochs to train for
+            ckpt_every: save the model after n epochs
+        """
+        log.info("\ntraining started\n")
+
+        if checkpoint_path is not None:
+            start_epoch = load_model_checkpoint(
+                checkpoint_path, self.model, optimizer, self.device, scheduler
+            )
+            log.info(
+                "NOTE: A checkpoint file was provided, the model will resume training at epoch %d",
+                start_epoch,
+            )
+
+        if self.enable_amp:
+            log.info("using mixed precision training")
+            scaler = torch.amp.GradScaler(self.device.type)
+        else:
+            scaler = None
+
+        total_train_start_time = time.time()
+
+        last_best_path = None
+
+        # NOTE: the dataloaders can be visualized with scripts/visualizations/dataloaders.py
+
+        best_acc = 0.0
+        train_loss = []
+        val_loss = []
+        lr_vals = []
+        epoch_acc1 = []
+        for epoch in range(start_epoch, epochs + 1):
+            self.model.train()
+
+            # Track the time it takes for one epoch (train and val)
+            one_epoch_start_time = time.time()
+
+            # Train one epoch
+            train_loss_meter = self._train_one_epoch(
+                dataloader_train,
+                optimizer,
+                scheduler,
+                epoch,
+                grad_accum_steps,
+                max_norm,
+                scaler,
+            )
+
+            train_loss.append(train_loss_meter.avg)
+
+            # Evaluate the model on the validation set
+            log.info("\nEvaluating on validation set — epoch %d", epoch)
+
+            if self.step_lr_on == "epochs":
+                curr_lr = round(optimizer.state_dict()["param_groups"][0]["lr"], 8)
+                self.learning_rate.append(curr_lr)
+
+            if acc1 > best_acc:
+                best_acc = acc1
+
+                acc_str = f"{acc1:.2f}".replace(".", "-")
+                best_path = self.output_dir / "checkpoints" / f"best_acc1_{acc_str}.pt"
+                best_path.parents[0].mkdir(parents=True, exist_ok=True)
+
+                log.info(
+                    "new best top 1 accuracy of %.2f found at epoch %d; saving checkpoint",
+                    acc1,
+                    epoch,
+                )
+                self.save_model(
+                    optimizer, epoch, save_path=best_path, lr_scheduler=scheduler
+                )
+
+                # delete the previous best model's checkpoint to save space
+                if last_best_path is not None:
+                    last_best_path.unlink(missing_ok=True)
+                last_best_path = best_path
+
+            plot_loss(train_loss, val_loss, save_dir=str(self.output_dir))
+            plot_acc1(epoch_acc1, save_dir=str(self.output_dir))
+
+            # Create csv file of training stats per epoch
+            train_dict = {
+                "epoch": list(np.arange(start_epoch, epoch + 1)),
+                "train_loss": train_loss,
+                "val_loss": val_loss,
+                "acc1": epoch_acc1,
+            }
+            pd.DataFrame(train_dict).round(5).to_csv(
+                self.output_dir / "train_stats.csv", index=False
+            )
+
+            # Save the model every ckpt_epochs
+            if (epoch) % ckpt_epochs == 0:
+                ckpt_path = self.output_dir / "checkpoints" / f"checkpoint{epoch:04}.pt"
+                ckpt_path.parents[0].mkdir(parents=True, exist_ok=True)
+                self._save_model(
+                    self.model,
+                    optimizer,
+                    epoch,
+                    save_path=ckpt_path,
+                    lr_scheduler=scheduler,
+                )
+
+            # Save and overwrite the checkpoint with the highest top 1 accuracy
+            if round(acc1, 4) > round(best_acc, 4):
+                best_acc = acc1
+
+                acc1_str = f"{acc1*100:.2f}".replace(".", "-")
+                best_path = self.output_dir / "checkpoints" / f"best_acc_{acc1_str}.pt"
+                best_path.parents[0].mkdir(parents=True, exist_ok=True)
+
+                log.info(
+                    "new best top 1 accuracy of %.2f found at epoch %d; saving checkpoint",
+                    acc1 * 100,
+                    epoch,
+                )
+                self._save_model(
+                    self.model,
+                    optimizer,
+                    epoch,
+                    save_path=best_path,
+                    lr_scheduler=scheduler,
+                )
+
+                # delete the previous best accuracy model's checkpoint
+                if last_best_path is not None:
+                    last_best_path.unlink(missing_ok=True)
+                last_best_path = best_path
+
+            # Current epoch time (train/val)
+            one_epoch_time = time.time() - one_epoch_start_time
+            one_epoch_time_str = str(datetime.timedelta(seconds=int(one_epoch_time)))
+            log.info("\nEpoch time  (h:mm:ss): %s", one_epoch_time_str)
+
+        # Entire training time
+        total_time = time.time() - total_train_start_time
+        total_time_str = str(datetime.timedelta(seconds=int(total_time)))
+        log.info(
+            "Training time for %d epochs (h:mm:ss): %s ",
+            start_epoch - epochs,
+            total_time_str,
+        )
 
 
 def create_trainer(
@@ -531,7 +707,15 @@ def create_trainer(
             disable_amp=disable_amp,
         )
     elif trainer_type == "simmim":
-        return SimMIMTrainer()  # TODO: intialize
+        return SimMIMTrainer(
+            model=model,
+            output_dir=output_dir,
+            step_lr_on=step_lr_on,
+            device=device,
+            log_train_steps=log_train_steps,
+            amp_dtype=amp_dtype,
+            disable_amp=disable_amp,
+        )  # TODO: intialize
     else:
         raise ValueError(f"Unknown trainer type: {trainer_type}")
 

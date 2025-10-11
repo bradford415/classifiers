@@ -57,14 +57,15 @@ def get_optimizer_params(
             skip_keywords = model.no_weight_decay_keywords()
             log.info(f"No weight decay keywords: {skip_keywords}")
 
-        param_dicts = get_simmim_pretrain_param_groups()
+        # the logic should be the same for swin and swin simmim
+        param_dicts = get_swin_pretrain_param_groups(model)
     else:
         raise ValueError(f"Unknown parameter group strategy: {strategy}")
 
     return param_dicts
 
 
-def get_simmim_pretrain_param_groups(model, logger, skip_list=(), skip_keywords=()):
+def get_swin_pretrain_param_groups(model, skip_list=(), skip_keywords=()):
     """Separate the trainable parameters into two groups: ones with weight decay and ones
     without weight decay.
 
@@ -97,8 +98,8 @@ def get_simmim_pretrain_param_groups(model, logger, skip_list=(), skip_keywords=
             has_decay.append(param)
             has_decay_name.append(name)
 
-    logger.info(f"No decay params: {no_decay_name}")
-    logger.info(f"Has decay params: {has_decay_name}")
+    log.info(f"No decay params: {no_decay_name}")
+    log.info(f"Has decay params: {has_decay_name}")
     return [{"params": has_decay}, {"params": no_decay, "weight_decay": 0.0}]
 
 
@@ -144,10 +145,13 @@ def build_solvers(
     # TODO: impelement configs for warmup_cosine_decay; i think this is already done?
     # Build scheduler
 
-    #### start here, try to build scheduler
-    if scheduler_name in scheduler_map:
+    scheduler_params["num_steps_per_epoch"] = num_steps_per_epoch
+    if scheduler_name == "multistep_lr":
+        scheduler = create_multistep_lr_scheduler(
+            optimizer, t_in_epochs=False, **scheduler_params
+        )
+    elif scheduler_name in scheduler_map:
         scheduler_params["num_epochs"] = num_epochs
-        scheduler_params["steps_per_epoch"] = num_steps_per_epoch
         scheduler = scheduler_map[scheduler_name](optimizer, **scheduler_params)
     else:
         raise ValueError(f"Unknown lr_scheduler: {scheduler_name}")

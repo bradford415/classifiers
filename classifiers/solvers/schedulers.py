@@ -231,7 +231,7 @@ def create_multistep_lr_scheduler(
                     these will be converted to steps
         gamma: multiplicative factor to reduce the learning rate by at each milestone
         warmup_epochs: number of epochs to linearly increase the learning rate over before decaying it
-        warmup_lr_init: initial learning rate to start the linear warmup from; if 0 then starts from 0
+        warmup_lr_init: initial learning rate to start the linear warmup from
         t_in_epochs: if True, milestones and warmup_t are in epochs; if False, they are in steps
     """
     warmup_steps = int(warmup_epochs * num_steps_per_epoch)

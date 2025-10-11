@@ -3,7 +3,7 @@
 
 # Whether to run in development/debugging mode; this only uses a few samples in in the train/val dataset
 # to quickly run the code as well as sets num_workers=0
-dev_mode: False
+dev_mode: True
 
 amp:
   # using amp is determined by device but one can override it here; True = disable amp
@@ -83,8 +83,9 @@ solver:
 
     params:
       warmup_epochs: 10 # TODO might need to adjust based on num epochs I choose
-      warmup_lr: 5.e-7
-      warmup_min_lr: 5.e-6 # is this needed?
+      
+      # the learning rate to start the warmup at and linear scale until it reaches the base `lr`
+      warmup_lr_init: 5.e-7
 
       # list of epochs to reduce the learning rate at by a factor of gamma (usually 0.1)
       multisteps: [700,]
