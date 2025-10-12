@@ -222,8 +222,8 @@ class SimMIMTransform:
         return img, mask
 
 
-def collate_fn_simmim(batch: list[tuple[]]):
-    """Custom collate function to handle batches where each sample is a 
+def collate_fn_simmim(batch: list[tuple[tuple, int]]):
+    """Custom collate function to handle batches where each sample is a
     tuple of ((image, mask), target)
 
     Args:
@@ -232,7 +232,7 @@ def collate_fn_simmim(batch: list[tuple[]]):
                - mask: the binary mask representing which patches to mask (1 = masked, 0 = visible)
                        (num_patches, num_patches)
                 - target: the class label of the image (ignored during simmim pretraining)
-    
+
     Returns:
         a 3 element list containing:
             1. a batch of images (b, c, h, w)
@@ -246,7 +246,7 @@ def collate_fn_simmim(batch: list[tuple[]]):
         # simmmim case
         batch_num = len(batch)
         ret = []
-        
+
         # loop through the image and mask tuple to create a two element list containing
         # a batch of images (b, c, h, w) and a batch of masks (b, num_patches, num_patches)
         for item_idx in range(len(batch[0][0])):

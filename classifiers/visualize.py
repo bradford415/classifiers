@@ -1,22 +1,30 @@
 from pathlib import Path
+from typing import Optional
 
 import matplotlib
-
-matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
+matplotlib.use("Agg")
 
-def plot_loss(train_loss: list[float], val_loss: list[float], save_dir: str):
-    """Plots the total val and train loss per epoch"""
+
+def plot_loss(
+    train_loss: list[float], save_dir: str, val_loss: Optional[list[float]] = None
+):
+    """Plots the total train and optionally val loss per epoch"""
     save_name = Path(save_dir) / "total_loss.jpg"
 
     x = np.arange(len(train_loss)) + 1
     fig, ax = plt.subplots(1)
-    ax.plot(x, train_loss)
-    ax.plot(x, val_loss)
 
-    plt.legend(["train loss", "val loss"])
+    legend_vals = ["train loss"]
+    ax.plot(x, train_loss)
+
+    if val_loss is not None:
+        legend_vals.append("val loss")
+        ax.plot(x, val_loss)
+
+    plt.legend(legend_vals)
     plt.title("total loss per epoch")
     ax.set_xlabel("epoch")
     ax.set_ylabel("loss")

@@ -2,8 +2,10 @@ import math
 from typing import Optional, Union
 
 import torch
-from torch import functional as F
 from torch import nn
+from torch.nn import functional as F
+
+# TODO: move the simmim code to its own file
 
 
 def window_partition(x: torch.Tensor, window_size: int):
@@ -822,6 +824,10 @@ class SwinTransformer(nn.Module):
         """
         super().__init__()
 
+        self.img_size = img_size
+        self.patch_size = patch_size
+        self.in_chans = in_chans
+
         self.num_layers = len(depths)
         self.patch_emb_dim = patch_emb_dim
         self.ape = ape
@@ -910,6 +916,8 @@ class SwinTransformer(nn.Module):
             self.layers.append(layer)
 
         self.norm = norm_layer(self.num_features)
+
+        self.num_classes = num_classes
 
         # performs average pooling on the output feature map of the last stage
         # along the token dim for classification; using 1 is the same as GlobalAveragePooling;
@@ -1336,7 +1344,7 @@ class SimMIM(nn.Module):
         x_rec = self.decoder(z)
 
         # repeat the binary mask along the h & w dims to create a mask
-        # of the original image size (b, 1, orig_h, orig_w)
+        # of the original image size (b, num_patches, num_patches) -> (b, 1, orig_h, orig_w)
         # NOTE: repeat_interleave repeats individual elements along a dimension while
         #       `repeat` repeats the entire tensors
         mask = (
@@ -1352,7 +1360,7 @@ class SimMIM(nn.Module):
         loss_recon = F.l1_loss(x, x_rec, reduction="none")
 
         # zero out the loss at the pixel locations that are not masked so they do not contribute to
-        # the loss, then average across the number of masked pixels
+        # the loss, then average across the number of masked pixels in the batch
         # (self.in_chans is to account for each rgb channel)
         loss = (loss_recon * mask).sum() / (mask.sum() + 1e-5) / self.in_chans
         return loss
@@ -1368,6 +1376,47 @@ class SimMIM(nn.Module):
         if hasattr(self.encoder, "no_weight_decay_keywords"):
             return {"encoder." + i for i in self.encoder.no_weight_decay_keywords()}
         return {}
+
+
+def build_swin_simmim(
+    img_size: Union[int, tuple], encoder_stride: int, swin_params: dict[str, any]
+):
+    """Initalize the Swin Transformer model
+
+    Args:
+        img_size: the image input size (after data transforms)
+        encoder_stride: the downsample factor from the input image size to the final stage
+                        typically 32 for swin and 16 for vit
+        swin_params: dictionary of parameters used to intialize the swin transformer with
+    """
+
+    layernorm = nn.LayerNorm
+
+    swin_simmim_model = SwinTransformerSimMIM(
+        img_size=img_size,
+        patch_size=swin_params["patch_size"],
+        in_chans=3,  # for RGB images
+        num_classes=0,  # no classification head
+        patch_emb_dim=swin_params["patch_emb_dim"],
+        depths=swin_params["depths"],
+        num_heads=swin_params["num_heads"],
+        window_size=swin_params["window_size"],
+        mlp_ratio=swin_params["mlp_ratio"],
+        qkv_bias=True,
+        qk_scale=None,
+        dropout=swin_params["dropout"],
+        attn_drop_rate=swin_params["attn_dropout"],
+        drop_path_rate=swin_params["drop_path_rate"],
+        norm_layer=layernorm,
+        ape=swin_params["ape"],
+        patch_norm=swin_params["patch_norm"],
+        use_checkpoint=swin_params["use_activation_checkpointing"],
+        fused_window_process=False,
+    )
+
+    simmim_model = SimMIM(encoder=swin_simmim_model, encoder_stride=encoder_stride)
+
+    return simmim_model
 
 
 def build_swin(

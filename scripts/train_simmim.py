@@ -10,7 +10,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from classifiers.dataset.imagenet import build_imagenet_simmim, collate_fn_simmim
-from classifiers.models.create import create_classifier
+from classifiers.models.create import create_simmim_model
 from classifiers.solvers.build import build_solvers
 from classifiers.trainer import create_trainer
 from classifiers.utils import reproduce
@@ -179,10 +179,10 @@ def main(
     # TODO: make distributed
     backbone_name = model_config["backbone"]
     backbone_params = model_config["params"]
-    model = create_classifier(
-        classifier_name=backbone_name,
-        classifier_args=backbone_params,
-        num_classes=dataset_train.num_classes,
+    model = create_simmim_model(
+        backbone_name=backbone_name,
+        backbone_args=backbone_params,
+        # NOTE: num_classes is hardcoded as 0 since there's no classification head in simmim
         image_size=base_config["dataset"]["image_size"],
     )
 

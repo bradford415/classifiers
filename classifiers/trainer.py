@@ -79,23 +79,6 @@ class BaseTrainer(ABC):
         # self.enable_amp = False
 
     @abstractmethod
-    def train(
-        self,
-        *args,
-        **kwargs,
-    ):
-        """Trains a model
-
-        Specifically, this method trains a model for n epochs and evaluates on the validation set.
-        A model checkpoint is saved at user-specified intervals.
-        """
-        pass
-
-    @abstractmethod
-    def train_step(self, batch, grad_accum_steps):
-        """Predict and compute the loss for a single batch"""
-        pass
-
     def _train_one_epoch(
         self,
         dataloader_train: Iterable,
@@ -115,101 +98,7 @@ class BaseTrainer(ABC):
             epoch: current epoch; used for logging purposes
             scaler: scaler for mixed precision
         """
-        # TODO: should probably move these metric functins/classes in evaluate to its own metrics.py file
-        losses = AverageMeter()
-        top1 = AverageMeter()
-        top5 = AverageMeter()
-
-        num_steps_per_epoch = len(dataloader_train)
-
-        epoch_loss = []
-        epoch_lr = []  # Store lr every epoch so I can visualize the scheduler
-        curr_lr = None
-        for steps, batch in enumerate(dataloader_train, 1):
-
-            samples, targets, preds, loss = self.train_step(batch, grad_accum_steps)
-
-            acc1, acc5 = topk_accuracy(preds, targets, topk=(1, 5))
-            losses.update(
-                loss.item(), samples.shape[0]
-            )  # TODO: Need to check if this is accurate now that I added gradient accumulation; I think it is
-            top1.update(acc1[0], samples.shape[0])
-            top5.update(acc5[0], samples.shape[0])
-
-            # https://github.com/jeonsworld/ViT-pytorch/blob/460a162767de1722a014ed2261463dbbc01196b6/train.py#L198
-            # breakpoint()
-
-            # Calculate and accumulate gradients
-            if self.enable_amp:
-                scaler.scale(loss).backward()
-            else:
-                loss.backward()
-
-            if steps % grad_accum_steps == 0:
-                if self.enable_amp:
-                    # Unscales the gradients of optimizer's assigned params in-place and clip as usual
-                    if max_norm is not None:
-                        scaler.unscale_(optimizer)
-                        nn.utils.clip_grad_norm_(self.model.parameters(), max_norm)
-
-                    scaler.step(optimizer)
-                    scaler.update()
-                else:
-                    if max_norm is not None:
-                        nn.utils.clip_grad_norm_(self.model.parameters(), max_norm)
-                    optimizer.step()
-
-                optimizer.zero_grad()
-
-                curr_lr = round(optimizer.state_dict()["param_groups"][0]["lr"], 8)
-
-                if self.step_lr_on == "steps":
-                    # I think having this in the grad_accum_steps if block is correct since the lr is only used during
-                    # optimizer step
-                    self.learning_rate.append(curr_lr)
-
-                # Increment lr scheduler every effective batch_size (grad_accum_steps)
-                if scheduler is not None and self.step_lr_on == "steps":
-                    if not isinstance(
-                        scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau
-                    ):
-                        if isinstance(scheduler, Scheduler):
-                            # timm scheduler, need to pass in the number of steps that we've taken so far;
-                            # NOTE: we shouldn't have to take into account grad_accum_steps; it should
-                            #       make the same progress as if we were using grad_accum_steps
-                            scheduler.step_update(
-                                (epoch - 1) * num_steps_per_epoch + steps
-                            )
-                        else:
-                            # pytorch scheduler we just call step()
-                            scheduler.step()
-                    else:
-                        scheduler.step(loss.item())
-
-            epoch_loss.append(loss.item())
-
-            if (steps) % 10 == 0:
-                # Update the learning rate plot after n steps
-                plot_lr(
-                    self.learning_rate,
-                    x_label=self.step_lr_on,
-                    save_dir=str(self.output_dir),
-                )
-
-            if (steps) % self.log_train_steps == 0:
-                curr_lr = optimizer.param_groups[0]["lr"]
-                log.info(
-                    "epoch: %-10d iter: %d/%-12d train_loss: %-10.4f curr_lr: %-12.6f",  # -n = right padding
-                    epoch,
-                    steps,
-                    len(dataloader_train),
-                    # NOTE: need to multiply by grad_accum_steps because the loss variable is scaled
-                    # and overwritten every step; the gradients is what stores the accumulated information
-                    loss.item() * grad_accum_steps,
-                    curr_lr,
-                )
-
-        return losses
+        pass
 
     @torch.no_grad()
     def _evaluate(
@@ -445,6 +334,8 @@ class ClassificationTrainer(BaseTrainer):
             one_epoch_time_str = str(datetime.timedelta(seconds=int(one_epoch_time)))
             log.info("\nEpoch time  (h:mm:ss): %s", one_epoch_time_str)
 
+
+        #### start here see what happens after the training (maybe visualizations?)
         # Entire training time
         total_time = time.time() - total_train_start_time
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))
@@ -454,26 +345,137 @@ class ClassificationTrainer(BaseTrainer):
             total_time_str,
         )
 
-    def train_step(self, batch, grad_accum_steps):
-        samples, targets = batch
-        samples = samples.to(self.device)
-        targets = targets.to(self.device)
+    def _train_one_epoch(
+        self,
+        dataloader_train: Iterable,
+        optimizer: torch.optim.Optimizer,
+        scheduler: torch.optim.lr_scheduler,
+        epoch: int,
+        grad_accum_steps: int,
+        max_norm: Optional[float],
+        scaler: torch.amp,
+    ):
+        """Train one epoch
 
-        with torch.autocast(
-            device_type=self.device.type,
-            dtype=self.amp_dtype,
-            enabled=self.enable_amp,
-        ):
-            # (b, num_classes)
-            preds = self.model(samples)
+        Args:
+            dataloader_train: dataloader for the training set
+            optimizer: optimizer to update the models weights
+            scheduler: learning rate scheduler to update the learning rate
+            epoch: current epoch; used for logging purposes
+            scaler: scaler for mixed precision
+        """
+        # TODO: should probably move these metric functins/classes in evaluate to its own metrics.py file
+        losses = AverageMeter()
+        top1 = AverageMeter()
+        top5 = AverageMeter()
 
-            loss = self.criterion(preds, targets)
+        num_steps_per_epoch = len(dataloader_train)
 
-            if grad_accum_steps > 1:
-                # Scale the loss by the number of accumulation steps to average the gradients
-                loss = loss / grad_accum_steps
+        epoch_loss = []
+        epoch_lr = []  # Store lr every epoch so I can visualize the scheduler
+        curr_lr = None
+        for steps, (samples, targets) in enumerate(dataloader_train, 1):
 
-        return samples, targets, preds, loss
+            samples = samples.to(self.device)
+            targets = targets.to(self.device)
+
+            with torch.autocast(
+                device_type=self.device.type,
+                dtype=self.amp_dtype,
+                enabled=self.enable_amp,
+            ):
+                # (b, num_classes)
+                preds = self.model(samples)
+
+                loss = self.criterion(preds, targets)
+
+                if grad_accum_steps > 1:
+                    # Scale the loss by the number of accumulation steps to average the gradients
+                    loss = loss / grad_accum_steps
+
+            breakpoint()
+
+            acc1, acc5 = topk_accuracy(preds, targets, topk=(1, 5))
+            losses.update(
+                loss.item(), samples.shape[0]
+            )  # TODO: Need to check if this is accurate now that I added gradient accumulation; I think it is
+            top1.update(acc1[0], samples.shape[0])
+            top5.update(acc5[0], samples.shape[0])
+
+            # https://github.com/jeonsworld/ViT-pytorch/blob/460a162767de1722a014ed2261463dbbc01196b6/train.py#L198
+            # breakpoint()
+
+            # Calculate and accumulate gradients
+            if self.enable_amp:
+                scaler.scale(loss).backward()
+            else:
+                loss.backward()
+
+            if steps % grad_accum_steps == 0:
+                if self.enable_amp:
+                    # Unscales the gradients of optimizer's assigned params in-place and clip as usual
+                    if max_norm is not None:
+                        scaler.unscale_(optimizer)
+                        nn.utils.clip_grad_norm_(self.model.parameters(), max_norm)
+
+                    scaler.step(optimizer)
+                    scaler.update()
+                else:
+                    if max_norm is not None:
+                        nn.utils.clip_grad_norm_(self.model.parameters(), max_norm)
+                    optimizer.step()
+
+                optimizer.zero_grad()
+
+                curr_lr = round(optimizer.state_dict()["param_groups"][0]["lr"], 8)
+
+                if self.step_lr_on == "steps":
+                    # I think having this in the grad_accum_steps if block is correct since the lr is only used during
+                    # optimizer step
+                    self.learning_rate.append(curr_lr)
+
+                # Increment lr scheduler every effective batch_size (grad_accum_steps)
+                if scheduler is not None and self.step_lr_on == "steps":
+                    if not isinstance(
+                        scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau
+                    ):
+                        if isinstance(scheduler, Scheduler):
+                            # timm scheduler, need to pass in the number of steps that we've taken so far;
+                            # NOTE: we shouldn't have to take into account grad_accum_steps; it should
+                            #       make the same progress as if we were using grad_accum_steps
+                            scheduler.step_update(
+                                (epoch - 1) * num_steps_per_epoch + steps
+                            )
+                        else:
+                            # pytorch scheduler we just call step()
+                            scheduler.step()
+                    else:
+                        scheduler.step(loss.item())
+
+            epoch_loss.append(loss.item())
+
+            if (steps) % 10 == 0:
+                # Update the learning rate plot after n steps
+                plot_lr(
+                    self.learning_rate,
+                    x_label=self.step_lr_on,
+                    save_dir=str(self.output_dir),
+                )
+
+            if (steps) % self.log_train_steps == 0:
+                curr_lr = optimizer.param_groups[0]["lr"]
+                log.info(
+                    "epoch: %-10d iter: %d/%-12d train_loss: %-10.4f curr_lr: %-12.6f",  # -n = right padding
+                    epoch,
+                    steps,
+                    len(dataloader_train),
+                    # NOTE: need to multiply by grad_accum_steps because the loss variable is scaled
+                    # and overwritten every step; the gradients is what stores the accumulated information
+                    loss.item() * grad_accum_steps,
+                    curr_lr,
+                )
+
+        return losses
 
 
 class SimMIMTrainer(BaseTrainer):
@@ -481,37 +483,6 @@ class SimMIMTrainer(BaseTrainer):
 
     def __init__(self, **base_kwargs):
         super().__init__(**base_kwargs)
-
-    def train_step(self, batch, grad_accum_steps):
-        """Performs a forward pass and computes the loss
-
-        Args:
-            batch: a sample from the dataloader which contains an image and mask
-                   where mask is a binary mask (1=mask, 0=visible) of shape (num_patches, num_patches)
-                   which is the shape of the patchified image
-            grad_accum_steps: number of steps to accumulate gradients for
-        """
-        breakpoint()
-        #### start here unpack the back properly
-        img, mask = batch
-        img = img.to(
-            self.device, non_blocking=True
-        )  # TODO: read article on non_blocking
-        mask = mask.to(self.device, non_blocking=True)
-
-        with torch.autocast(
-            device_type=self.device.type,
-            dtype=self.amp_dtype,
-            enabled=self.enable_amp,
-        ):
-            # simim returns the loss directly
-            loss = self.model(img)
-
-            if grad_accum_steps > 1:
-                # Scale the loss by the number of accumulation steps to average the gradients
-                loss = loss / grad_accum_steps
-
-        return img, loss
 
     def train(
         self,
@@ -557,20 +528,14 @@ class SimMIMTrainer(BaseTrainer):
 
         total_train_start_time = time.time()
 
-        last_best_path = None
-
         # NOTE: the dataloaders can be visualized with scripts/visualizations/dataloaders.py
 
-        best_acc = 0.0
         train_loss = []
-        val_loss = []
-        lr_vals = []
-        epoch_acc1 = []
         for epoch in range(start_epoch, epochs + 1):
             self.model.train()
 
             # Track the time it takes for one epoch (train and val)
-            one_epoch_start_time = time.time()
+            one_epoch_train_start_time = time.time()
 
             # Train one epoch
             train_loss_meter = self._train_one_epoch(
@@ -583,6 +548,11 @@ class SimMIMTrainer(BaseTrainer):
                 scaler,
             )
 
+            # Current epoch train time (train/val)
+            one_epoch_time = time.time() - one_epoch_train_start_time
+            one_epoch_time_str = str(datetime.timedelta(seconds=int(one_epoch_time)))
+            log.info("\nEpoch train time  (h:mm:ss): %s", one_epoch_time_str)
+
             train_loss.append(train_loss_meter.avg)
 
             # Evaluate the model on the validation set
@@ -592,36 +562,12 @@ class SimMIMTrainer(BaseTrainer):
                 curr_lr = round(optimizer.state_dict()["param_groups"][0]["lr"], 8)
                 self.learning_rate.append(curr_lr)
 
-            if acc1 > best_acc:
-                best_acc = acc1
-
-                acc_str = f"{acc1:.2f}".replace(".", "-")
-                best_path = self.output_dir / "checkpoints" / f"best_acc1_{acc_str}.pt"
-                best_path.parents[0].mkdir(parents=True, exist_ok=True)
-
-                log.info(
-                    "new best top 1 accuracy of %.2f found at epoch %d; saving checkpoint",
-                    acc1,
-                    epoch,
-                )
-                self.save_model(
-                    optimizer, epoch, save_path=best_path, lr_scheduler=scheduler
-                )
-
-                # delete the previous best model's checkpoint to save space
-                if last_best_path is not None:
-                    last_best_path.unlink(missing_ok=True)
-                last_best_path = best_path
-
-            plot_loss(train_loss, val_loss, save_dir=str(self.output_dir))
-            plot_acc1(epoch_acc1, save_dir=str(self.output_dir))
+            plot_loss(train_loss, save_dir=str(self.output_dir))
 
             # Create csv file of training stats per epoch
             train_dict = {
                 "epoch": list(np.arange(start_epoch, epoch + 1)),
                 "train_loss": train_loss,
-                "val_loss": val_loss,
-                "acc1": epoch_acc1,
             }
             pd.DataFrame(train_dict).round(5).to_csv(
                 self.output_dir / "train_stats.csv", index=False
@@ -631,6 +577,7 @@ class SimMIMTrainer(BaseTrainer):
             if (epoch) % ckpt_epochs == 0:
                 ckpt_path = self.output_dir / "checkpoints" / f"checkpoint{epoch:04}.pt"
                 ckpt_path.parents[0].mkdir(parents=True, exist_ok=True)
+                ## TODO: verify the custom timm scheduler saves correctly
                 self._save_model(
                     self.model,
                     optimizer,
@@ -638,37 +585,6 @@ class SimMIMTrainer(BaseTrainer):
                     save_path=ckpt_path,
                     lr_scheduler=scheduler,
                 )
-
-            # Save and overwrite the checkpoint with the highest top 1 accuracy
-            if round(acc1, 4) > round(best_acc, 4):
-                best_acc = acc1
-
-                acc1_str = f"{acc1*100:.2f}".replace(".", "-")
-                best_path = self.output_dir / "checkpoints" / f"best_acc_{acc1_str}.pt"
-                best_path.parents[0].mkdir(parents=True, exist_ok=True)
-
-                log.info(
-                    "new best top 1 accuracy of %.2f found at epoch %d; saving checkpoint",
-                    acc1 * 100,
-                    epoch,
-                )
-                self._save_model(
-                    self.model,
-                    optimizer,
-                    epoch,
-                    save_path=best_path,
-                    lr_scheduler=scheduler,
-                )
-
-                # delete the previous best accuracy model's checkpoint
-                if last_best_path is not None:
-                    last_best_path.unlink(missing_ok=True)
-                last_best_path = best_path
-
-            # Current epoch time (train/val)
-            one_epoch_time = time.time() - one_epoch_start_time
-            one_epoch_time_str = str(datetime.timedelta(seconds=int(one_epoch_time)))
-            log.info("\nEpoch time  (h:mm:ss): %s", one_epoch_time_str)
 
         # Entire training time
         total_time = time.time() - total_train_start_time
@@ -678,6 +594,150 @@ class SimMIMTrainer(BaseTrainer):
             start_epoch - epochs,
             total_time_str,
         )
+
+    def _train_one_epoch(
+        self,
+        dataloader_train: Iterable,
+        optimizer: torch.optim.Optimizer,
+        scheduler: torch.optim.lr_scheduler,
+        epoch: int,
+        grad_accum_steps: int,
+        max_norm: Optional[float],
+        scaler: torch.amp,
+    ):
+        """Train one epoch
+
+        Args:
+            dataloader_train: dataloader for the training set
+            optimizer: optimizer to update the models weights
+            scheduler: learning rate scheduler to update the learning rate
+            epoch: current epoch; used for logging purposes
+            scaler: scaler for mixed precision
+        """
+        # TODO: should probably move these metric functins/classes in evaluate to its own metrics.py file
+        loss_meter = AverageMeter()
+        batch_time_meter = AverageMeter()
+
+        num_steps_per_epoch = len(dataloader_train)
+
+        epoch_loss = []
+        epoch_lr = []  # Store lr every epoch so I can visualize the scheduler
+        curr_lr = None
+        batch_time = time.time()
+        for steps, (img, mask, _) in enumerate(dataloader_train, 1):
+            # NOTE: the `_` is the class label which we don't need for simmim pretraining
+            img = img.to(
+                self.device, non_blocking=True
+            )  # TODO: read article on non_blocking
+            mask = mask.to(self.device, non_blocking=True)
+
+            # TODO: consider adding a no grad sync option for DDP
+            with torch.autocast(
+                device_type=self.device.type,
+                dtype=self.amp_dtype,
+                enabled=self.enable_amp,
+            ):
+                # simim returns the loss directly
+                loss = self.model(img, mask)
+
+                if grad_accum_steps > 1:
+                    # Scale the loss by the number of accumulation steps to average the gradients
+                    loss = loss / grad_accum_steps
+
+            # Calculate and accumulate gradients
+            if self.enable_amp:
+                scaler.scale(loss).backward()
+            else:
+                loss.backward()
+
+            if steps % grad_accum_steps == 0:
+                if self.enable_amp:
+                    # Unscales the gradients of optimizer's assigned params in-place and clip as usual
+                    if max_norm is not None:
+                        scaler.unscale_(optimizer)
+                        nn.utils.clip_grad_norm_(self.model.parameters(), max_norm)
+
+                    scaler.step(optimizer)
+                    scaler.update()
+                else:
+                    if max_norm is not None:
+                        nn.utils.clip_grad_norm_(self.model.parameters(), max_norm)
+                    optimizer.step()
+
+                optimizer.zero_grad()
+
+                curr_lr = round(optimizer.state_dict()["param_groups"][0]["lr"], 8)
+
+                if self.step_lr_on == "steps":
+                    # I think having this in the grad_accum_steps if block is correct since the lr is only used during
+                    # optimizer step
+                    self.learning_rate.append(curr_lr)
+
+                # Increment lr scheduler every effective batch_size (grad_accum_steps)
+                if scheduler is not None and self.step_lr_on == "steps":
+                    if not isinstance(
+                        scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau
+                    ):
+                        if isinstance(scheduler, Scheduler):
+                            # timm scheduler, need to pass in the number of steps that we've taken so far;
+                            # NOTE: we shouldn't have to take into account grad_accum_steps; it should
+                            #       make the same progress as if we were using grad_accum_steps
+                            scheduler.step_update(
+                                (epoch - 1) * num_steps_per_epoch + steps
+                            )
+                        else:
+                            # pytorch scheduler we just call step()
+                            scheduler.step()
+                    else:
+                        scheduler.step(loss.item())
+
+            # block the cpu until all kernels in all streams on a CUDA device complete;
+            # this is only used for timing purposes since it blocks pytorch's asynchronous execution
+            # model (i.e., the cpu queues work for the gpu); this should NOT be used in deployment
+            torch.cuda.synchronize()
+
+            # track the loss and time for the epoch
+            loss_meter.update(
+                loss.item(), img.shape[0]
+            )  # TODO: Need to check if this is accurate now that I added gradient accumulation; I think it is
+            epoch_loss.append(loss.item())
+
+            # track the time for each batch and reset the timer
+            batch_time_meter.update(time.time() - batch_time)
+            batch_time = time.time()
+
+            if (steps) % 10 == 0:
+                # Update the learning rate plot after n steps
+                plot_lr(
+                    self.learning_rate,
+                    x_label=self.step_lr_on,
+                    save_dir=str(self.output_dir),
+                )
+
+            if (steps) % self.log_train_steps == 0:
+                curr_lr = optimizer.param_groups[0]["lr"]
+
+                # estimate the time left to finish the epoch
+                eta_epoch_finished = str(
+                    datetime.timedelta(
+                        seconds=int(
+                            batch_time_meter.avg * (num_steps_per_epoch - steps)
+                        )
+                    )
+                )
+
+                log.info(
+                    "epoch: %-8d iter: %d/%-12d train_loss: %-10.4f curr_lr: %-12.6f eta (h:mm:ss): %s",  # -n = right padding
+                    epoch,
+                    steps,
+                    len(dataloader_train),
+                    # NOTE: need to multiply by grad_accum_steps because the loss variable is scaled
+                    # and overwritten every step; the gradients is what stores the accumulated information
+                    loss.item() * grad_accum_steps,
+                    curr_lr,
+                    eta_epoch_finished,
+                )
+        return loss_meter
 
 
 def create_trainer(
