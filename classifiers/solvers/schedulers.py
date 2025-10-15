@@ -143,7 +143,7 @@ def warmup_cosine_decay(
     optimizer: torch.optim.Optimizer,
     warmup_epochs: int,
     num_epochs: int,
-    steps_per_epoch: int,
+    num_steps_per_epoch: int,
     num_cycles: float = 0.5,
     warmup_min_lr: float = 1e-6,
 ):
@@ -157,8 +157,8 @@ def warmup_cosine_decay(
         warmup_min_lr: the minimum learning rate to use during warmup; this is needed because at the first
                        epoch the learning rate would be 0 so we need to add a small value to it
     """
-    total_steps = num_epochs * steps_per_epoch
-    warmup_steps = warmup_epochs * steps_per_epoch
+    total_steps = num_epochs * num_steps_per_epoch
+    warmup_steps = warmup_epochs * num_steps_per_epoch
     ### start here and finish this, need to visualize the lr schedule to make sure it looks right
     return WarmupCosineSchedule(
         optimizer,

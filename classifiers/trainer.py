@@ -18,7 +18,7 @@ from classifiers.evaluate import (
     load_model_checkpoint,
     topk_accuracy,
 )
-from classifiers.visualize import plot_acc1, plot_loss, plot_lr
+from classifiers.visualize import plot_acc1, plot_loss, plot_lr, plot_masked_patches
 
 log = logging.getLogger(__name__)
 
@@ -296,7 +296,6 @@ class ClassificationTrainer(BaseTrainer):
                 ckpt_path = self.output_dir / "checkpoints" / f"checkpoint{epoch:04}.pt"
                 ckpt_path.parents[0].mkdir(parents=True, exist_ok=True)
                 self._save_model(
-                    self.model,
                     optimizer,
                     epoch,
                     save_path=ckpt_path,
@@ -317,7 +316,6 @@ class ClassificationTrainer(BaseTrainer):
                     epoch,
                 )
                 self._save_model(
-                    self.model,
                     optimizer,
                     epoch,
                     save_path=best_path,
@@ -480,6 +478,8 @@ class ClassificationTrainer(BaseTrainer):
 
 class SimMIMTrainer(BaseTrainer):
     """Trainer for pretraining models with SimMIM"""
+    
+    # TODO: implement visualization on checkpoint saves; probably static set of images?
 
     def __init__(self, **base_kwargs):
         super().__init__(**base_kwargs)
@@ -555,9 +555,6 @@ class SimMIMTrainer(BaseTrainer):
 
             train_loss.append(train_loss_meter.avg)
 
-            # Evaluate the model on the validation set
-            log.info("\nEvaluating on validation set — epoch %d", epoch)
-
             if self.step_lr_on == "epochs":
                 curr_lr = round(optimizer.state_dict()["param_groups"][0]["lr"], 8)
                 self.learning_rate.append(curr_lr)
@@ -575,11 +572,15 @@ class SimMIMTrainer(BaseTrainer):
 
             # Save the model every ckpt_epochs
             if (epoch) % ckpt_epochs == 0:
+                imgages, masks, _ = next(iter(dataloader_train))
+                with torch.no_grad():
+                    plot_masked_patches(imgages, masks, save_dir=str(self.output_dir / "visuals"))
+                
+                
                 ckpt_path = self.output_dir / "checkpoints" / f"checkpoint{epoch:04}.pt"
                 ckpt_path.parents[0].mkdir(parents=True, exist_ok=True)
                 ## TODO: verify the custom timm scheduler saves correctly
                 self._save_model(
-                    self.model,
                     optimizer,
                     epoch,
                     save_path=ckpt_path,
@@ -625,6 +626,7 @@ class SimMIMTrainer(BaseTrainer):
         curr_lr = None
         batch_time = time.time()
         for steps, (img, mask, _) in enumerate(dataloader_train, 1):
+            
             # NOTE: the `_` is the class label which we don't need for simmim pretraining
             img = img.to(
                 self.device, non_blocking=True
@@ -681,7 +683,8 @@ class SimMIMTrainer(BaseTrainer):
                         if isinstance(scheduler, Scheduler):
                             # timm scheduler, need to pass in the number of steps that we've taken so far;
                             # NOTE: we shouldn't have to take into account grad_accum_steps; it should
-                            #       make the same progress as if we were using grad_accum_steps
+                            #       make the same progress as if we were using grad_accum_steps; however
+                            #       in the case of cosine decay below, it does take into account grad_accum_steps
                             scheduler.step_update(
                                 (epoch - 1) * num_steps_per_epoch + steps
                             )

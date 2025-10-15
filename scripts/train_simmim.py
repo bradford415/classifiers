@@ -198,6 +198,7 @@ def main(
         model,
         epochs,
         len(dataloader_train),
+        grad_accum_steps,
         solver_config["optimizer"],
         solver_config["lr_scheduler"],
     )

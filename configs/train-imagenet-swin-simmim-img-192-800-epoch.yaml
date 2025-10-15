@@ -3,7 +3,7 @@
 
 # Whether to run in development/debugging mode; this only uses a few samples in in the train/val dataset
 # to quickly run the code as well as sets num_workers=0
-dev_mode: True
+dev_mode: False
 
 amp:
   # using amp is determined by device but one can override it here; True = disable amp
@@ -55,7 +55,7 @@ train:
   epochs: 800
 
   # Number of epochs to checkpoint after; use 'null' to turn off checkpointing
-  ckpt_epochs: 10
+  ckpt_epochs: 5
 
   # Path of weights file (.pt) to resume training; 
   # use `null` to train a new model from scratch
