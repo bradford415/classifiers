@@ -104,8 +104,8 @@ def main(
 
     if dev_mode:
         log.info("NOTE: executing in dev mode")
-        train_args["batch_size"] = 2
-        train_args["effective_batch_size"] = 4
+        train_args["batch_size"] = 16
+        train_args["effective_batch_size"] = 32
 
     # Extract training and val params
     batch_size = train_args["batch_size"]

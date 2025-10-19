@@ -92,7 +92,7 @@ class WarmupCosineSchedule(LambdaLR):
         warmup_steps: int,
         total_steps: int,
         warmup_min_lr: float = 1e-6,
-        num_cycles: float = 0.5,
+        num_cycles: float = 1.0,
         last_epoch=-1,
     ):
         """Initialize the warmup cosine decay scheduler
@@ -107,8 +107,8 @@ class WarmupCosineSchedule(LambdaLR):
                            epoch the learning rate would be 0 so we need to add a small value to it
                            or else the weights wouldn't update for the first epoch
                            TODO: might need to modify this for the main lr too after warmup
-            num_cycles: the number of waves in the cosine schedule. Defaults to 0.5; practically, I think this controls how
-                        steep the drop in learning rate is (i.e., the higher number the steeper the drop)
+            num_cycles: the number of waves in the cosine schedule. Defaults to 1.0 which means only 1 decay
+                        (half a cosine wave)
             (decrease from the max value to 0 following a half-cosine).
             last_epoch: index of the last epoch when resuming training; defaults to -1
         """
@@ -135,7 +135,8 @@ class WarmupCosineSchedule(LambdaLR):
         )
         return max(
             0.0,
-            0.5 * (1.0 + math.cos(math.pi * float(self.num_cycles) * 2.0 * progress)),
+            #0.5 * (1.0 + math.cos(math.pi * float(self.num_cycles) * 2.0 * progress)), # original code
+            0.5 * (1.0 + math.cos(math.pi * float(self.num_cycles) * 1.0 * progress)), # modified code to closer match timm
         )
 
 
@@ -144,7 +145,7 @@ def warmup_cosine_decay(
     warmup_epochs: int,
     num_epochs: int,
     num_steps_per_epoch: int,
-    num_cycles: float = 0.5,
+    num_cycles: float = 1,
     warmup_min_lr: float = 1e-6,
 ):
     """Builds the warmup cosine decay lr scheduler
@@ -153,6 +154,8 @@ def warmup_cosine_decay(
         optimizer: torch optimizer to update w/ the learning rate to be updated
         warmup_steps: Linearly increase learning rate from 0 to 1 over this many steps; after
                       warmup_steps, learning rate decreases from 1 to 0 following a cosine curve
+        num_cycles: the number of waves in the cosine schedule; defaults to 1 which means only one decay
+                    and there are no restarts
         total_steps: total number of steps to decay to 0 over; cosine decay will start after warmup_steps
         warmup_min_lr: the minimum learning rate to use during warmup; this is needed because at the first
                        epoch the learning rate would be 0 so we need to add a small value to it

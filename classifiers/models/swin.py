@@ -1339,7 +1339,7 @@ class SimMIM(nn.Module):
         # encode the image with masked patches (b, num_features, h/32, w/32)
         z = self.encoder(x, mask)
 
-        # reconstruct the pixels from all patches (even the non-masked patches)
+        # reconstruct the pixels from all patches (even the non-masked patches but we'll compute the loss only on the masked patches)
         # (b, 3, orig_h, orig_w)
         x_rec = self.decoder(z)
 
@@ -1363,7 +1363,7 @@ class SimMIM(nn.Module):
         # the loss, then average across the number of masked pixels in the batch
         # (self.in_chans is to account for each rgb channel)
         loss = (loss_recon * mask).sum() / (mask.sum() + 1e-5) / self.in_chans
-        return loss
+        return loss, x_rec
 
     @torch.jit.ignore
     def no_weight_decay(self):

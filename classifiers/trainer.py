@@ -240,8 +240,9 @@ class ClassificationTrainer(BaseTrainer):
             val_loss_meter, acc1_meter = self._evaluate(dataloader_val)
             val_loss.append(val_loss_meter.avg)
 
+            curr_lr = round(optimizer.state_dict()["param_groups"][0]["lr"], 8)
+            
             if self.step_lr_on == "epochs":
-                curr_lr = round(optimizer.state_dict()["param_groups"][0]["lr"], 8)
                 self.learning_rate.append(curr_lr)
 
             # Increment lr scheduler every epoch
@@ -390,8 +391,6 @@ class ClassificationTrainer(BaseTrainer):
                 if grad_accum_steps > 1:
                     # Scale the loss by the number of accumulation steps to average the gradients
                     loss = loss / grad_accum_steps
-
-            breakpoint()
 
             acc1, acc5 = topk_accuracy(preds, targets, topk=(1, 5))
             losses.update(
@@ -553,18 +552,22 @@ class SimMIMTrainer(BaseTrainer):
             one_epoch_time_str = str(datetime.timedelta(seconds=int(one_epoch_time)))
             log.info("\nEpoch train time  (h:mm:ss): %s", one_epoch_time_str)
 
-            train_loss.append(train_loss_meter.avg)
-
+            curr_lr = round(optimizer.state_dict()["param_groups"][0]["lr"], 8)
+            
             if self.step_lr_on == "epochs":
-                curr_lr = round(optimizer.state_dict()["param_groups"][0]["lr"], 8)
                 self.learning_rate.append(curr_lr)
+
+            train_loss.append(train_loss_meter.avg)
+            
+
 
             plot_loss(train_loss, save_dir=str(self.output_dir))
 
             # Create csv file of training stats per epoch
+            # TODO: add the ability load this when resuming a checkpoint like the detectors repo
             train_dict = {
                 "epoch": list(np.arange(start_epoch, epoch + 1)),
-                "train_loss": train_loss,
+                "train_loss": train_loss
             }
             pd.DataFrame(train_dict).round(5).to_csv(
                 self.output_dir / "train_stats.csv", index=False
@@ -572,9 +575,13 @@ class SimMIMTrainer(BaseTrainer):
 
             # Save the model every ckpt_epochs
             if (epoch) % ckpt_epochs == 0:
-                imgages, masks, _ = next(iter(dataloader_train))
+                images, masks, _ = next(iter(dataloader_train))
+                images = images.to(self.device)
+                masks = masks.to(self.device)
                 with torch.no_grad():
-                    plot_masked_patches(imgages, masks, save_dir=str(self.output_dir / "visuals"))
+                    _, predicted_pixels = self.model(images, masks)
+                    
+                    plot_masked_patches(images.cpu(), masks.cpu(), predicted_pixels.cpu(), save_dir=str(self.output_dir / "visuals" / f"epoch{epoch:04}"))
                 
                 
                 ckpt_path = self.output_dir / "checkpoints" / f"checkpoint{epoch:04}.pt"
@@ -621,8 +628,6 @@ class SimMIMTrainer(BaseTrainer):
 
         num_steps_per_epoch = len(dataloader_train)
 
-        epoch_loss = []
-        epoch_lr = []  # Store lr every epoch so I can visualize the scheduler
         curr_lr = None
         batch_time = time.time()
         for steps, (img, mask, _) in enumerate(dataloader_train, 1):
@@ -639,8 +644,8 @@ class SimMIMTrainer(BaseTrainer):
                 dtype=self.amp_dtype,
                 enabled=self.enable_amp,
             ):
-                # simim returns the loss directly
-                loss = self.model(img, mask)
+                # simim returns the loss directly ( `_` is the reconstructed pixels)
+                loss, _ = self.model(img, mask)
 
                 if grad_accum_steps > 1:
                     # Scale the loss by the number of accumulation steps to average the gradients
@@ -700,10 +705,11 @@ class SimMIMTrainer(BaseTrainer):
             torch.cuda.synchronize()
 
             # track the loss and time for the epoch
+            # TODO: Need to check if this is scaling is accurate now that I added gradient accumulation; I think it is
+            scaled_loss = loss.item() * grad_accum_steps
             loss_meter.update(
-                loss.item(), img.shape[0]
-            )  # TODO: Need to check if this is accurate now that I added gradient accumulation; I think it is
-            epoch_loss.append(loss.item())
+                scaled_loss, img.shape[0]
+            )  
 
             # track the time for each batch and reset the timer
             batch_time_meter.update(time.time() - batch_time)

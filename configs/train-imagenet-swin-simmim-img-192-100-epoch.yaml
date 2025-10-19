@@ -3,11 +3,11 @@
 
 # Whether to run in development/debugging mode; this only uses a few samples in in the train/val dataset
 # to quickly run the code as well as sets num_workers=0
-dev_mode: True
+dev_mode: False
 
 amp:
   # using amp is determined by device but one can override it here; True = disable amp
-  disable_amp: False
+  disable_amp: True
 
   amp_dtype: "float16" # "float16" or "bfloat16"
 
@@ -55,11 +55,11 @@ train:
   epochs: 100
 
   # Number of epochs to checkpoint after; use 'null' to turn off checkpointing
-  ckpt_epochs: 1
+  ckpt_epochs: 5
 
   # Path of weights file (.pt) to resume training; 
   # use `null` to train a new model from scratch
-  checkpoint_path: 
+  checkpoint_path: #"/home/bselee/programming/classifiers/output/development/2025_10_15-10_08_21_PM/train/checkpoints/checkpoint0020.pt"
 
 # solver params: optimzer, lr scheduler, etc.
 solver:
@@ -76,13 +76,13 @@ solver:
 
   # SimMIM paper mentions cosine annealing for scheuduler but their ablation studies
   # show th multistep LR achieves bettter performance Appendix B.; the default 800 epoch config
-  # also uses the multistep_lr
+  # also uses the multistep_lr; the 100 epoch setting uses a cosine anneal with warm up
   lr_scheduler:
     name: "warmup_cosine_decay"
     step_lr_on: "steps" # step the lr after n "epochs" or "steps"
 
     params:
-      num_cycles: 1 # 1 => only one decay, no restarts
+      num_cycles: 1.0 # 1 => only one decay (half a cosine wave)
       warmup_epochs: 10
       warmup_min_lr: 1.e-5
 
