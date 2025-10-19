@@ -5,6 +5,20 @@ The goal of this repository is to:
 * Training techniques
   * Self-supervised pretraining
   * Classification pretraining
+ 
+## Environment setup
+
+__linux__
+```bash
+make create
+```
+
+__mac__
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+make install_reqs_mac
+```
 
 ## Training a model
 This project is designed to use the configuration specified in `configs/`, but for ease of use the CLI arguments specified below will overwrite the main default config parameters for quick setup.
