@@ -15,7 +15,7 @@ make create
 
 __mac__
 ```bash
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 make install_reqs
 ```
