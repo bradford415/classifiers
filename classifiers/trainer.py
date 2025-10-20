@@ -241,7 +241,7 @@ class ClassificationTrainer(BaseTrainer):
             val_loss.append(val_loss_meter.avg)
 
             curr_lr = round(optimizer.state_dict()["param_groups"][0]["lr"], 8)
-            
+
             if self.step_lr_on == "epochs":
                 self.learning_rate.append(curr_lr)
 
@@ -332,7 +332,6 @@ class ClassificationTrainer(BaseTrainer):
             one_epoch_time = time.time() - one_epoch_start_time
             one_epoch_time_str = str(datetime.timedelta(seconds=int(one_epoch_time)))
             log.info("\nEpoch time  (h:mm:ss): %s", one_epoch_time_str)
-
 
         #### start here see what happens after the training (maybe visualizations?)
         # Entire training time
@@ -477,7 +476,7 @@ class ClassificationTrainer(BaseTrainer):
 
 class SimMIMTrainer(BaseTrainer):
     """Trainer for pretraining models with SimMIM"""
-    
+
     # TODO: implement visualization on checkpoint saves; probably static set of images?
 
     def __init__(self, **base_kwargs):
@@ -553,13 +552,11 @@ class SimMIMTrainer(BaseTrainer):
             log.info("\nEpoch train time  (h:mm:ss): %s", one_epoch_time_str)
 
             curr_lr = round(optimizer.state_dict()["param_groups"][0]["lr"], 8)
-            
+
             if self.step_lr_on == "epochs":
                 self.learning_rate.append(curr_lr)
 
             train_loss.append(train_loss_meter.avg)
-            
-
 
             plot_loss(train_loss, save_dir=str(self.output_dir))
 
@@ -567,7 +564,7 @@ class SimMIMTrainer(BaseTrainer):
             # TODO: add the ability load this when resuming a checkpoint like the detectors repo
             train_dict = {
                 "epoch": list(np.arange(start_epoch, epoch + 1)),
-                "train_loss": train_loss
+                "train_loss": train_loss,
             }
             pd.DataFrame(train_dict).round(5).to_csv(
                 self.output_dir / "train_stats.csv", index=False
@@ -580,10 +577,14 @@ class SimMIMTrainer(BaseTrainer):
                 masks = masks.to(self.device)
                 with torch.no_grad():
                     _, predicted_pixels = self.model(images, masks)
-                    
-                    plot_masked_patches(images.cpu(), masks.cpu(), predicted_pixels.cpu(), save_dir=str(self.output_dir / "visuals" / f"epoch{epoch:04}"))
-                
-                
+
+                plot_masked_patches(
+                    images.cpu(),
+                    masks.cpu(),
+                    predicted_pixels.cpu(),
+                    save_dir=str(self.output_dir / "visuals" / f"epoch{epoch:04}"),
+                )
+
                 ckpt_path = self.output_dir / "checkpoints" / f"checkpoint{epoch:04}.pt"
                 ckpt_path.parents[0].mkdir(parents=True, exist_ok=True)
                 ## TODO: verify the custom timm scheduler saves correctly
@@ -631,7 +632,7 @@ class SimMIMTrainer(BaseTrainer):
         curr_lr = None
         batch_time = time.time()
         for steps, (img, mask, _) in enumerate(dataloader_train, 1):
-            
+
             # NOTE: the `_` is the class label which we don't need for simmim pretraining
             img = img.to(
                 self.device, non_blocking=True
@@ -707,9 +708,7 @@ class SimMIMTrainer(BaseTrainer):
             # track the loss and time for the epoch
             # TODO: Need to check if this is scaling is accurate now that I added gradient accumulation; I think it is
             scaled_loss = loss.item() * grad_accum_steps
-            loss_meter.update(
-                scaled_loss, img.shape[0]
-            )  
+            loss_meter.update(scaled_loss, img.shape[0])
 
             # track the time for each batch and reset the timer
             batch_time_meter.update(time.time() - batch_time)

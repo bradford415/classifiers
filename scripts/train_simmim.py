@@ -132,8 +132,6 @@ def main(
             "grad_accum_bs must be divisible by batch_size and greater than or equal to batch_size"
         )
 
-    #### start here, build simmim train script
-
     # Set device specific characteristics
     use_cpu = False
     gpu_id = base_config["cuda"]["gpus"][0]

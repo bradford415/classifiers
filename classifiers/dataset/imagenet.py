@@ -65,7 +65,8 @@ def make_imagenet_transforms(dataset_split: str, img_size: int = 224):
     elif dataset_split == "val":
         return T.Compose(
             [
-                T.Resize(256),
+                # T.Resize(256), # initially I had 256 but I think this should be 224 since it's what it was trained on
+                T.Resize(224),
                 T.CenterCrop(img_size),
                 normalize,
             ]
@@ -153,7 +154,7 @@ class SimMIMTransform:
     def __init__(
         self,
         dataset_split: str,
-        img_size: int = 224,
+        img_size: int = 192,
         mask_patch_size: int = 32,
         model_patch_size: int = 4,
         mask_ratio: float = 0.6,
@@ -172,29 +173,37 @@ class SimMIMTransform:
             [T.ToTensor(), T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])]
         )
 
-        # TODO: determine if I need separate augmentations for train and val
-
-        self.transform_img = T.Compose(
-            [
-                # random resize crop works as follows:
-                #   1. first compute the new area by randomly choosing a scale
-                #      between [67%, 100%] and multiply by the area of the original image
-                #   2. then randomly pick an aspect ratio uniform(3/4, 4/3)
-                #   3. from the new area and aspect ratio, compute the new height and width
-                #      new_h = sqrt(new_area / aspect_ratio), new_w = aspect_ratio * new_h
-                #      (formula is a little confusing but chatgpt can explain)
-                #   4. randomly choose the top left corner for the cropped region
-                #      y = Uniform(0, original_h - new_h)
-                #      x = Uniform(0, original_w - new_w)
-                #   5. finally resize the crop to img_size (224x224)
-                # NOTE: `ratio` is the default parameter and `scale` is modified to match the simmim code
-                T.RandomResizedCrop(
-                    img_size, scale=(0.67, 1.0), ratio=(3.0 / 4.0, 4.0 / 3.0)
-                ),  # 224 is commonly used to pretrain classifiers
-                T.RandomHorizontalFlip(),
-                _normalize,
-            ]
-        )
+        if dataset_split == "train":
+            self.transform_img = T.Compose(
+                [
+                    # random resize crop works as follows:
+                    #   1. first compute the new area by randomly choosing a scale
+                    #      between [67%, 100%] and multiply by the area of the original image
+                    #   2. then randomly pick an aspect ratio uniform(3/4, 4/3)
+                    #   3. from the new area and aspect ratio, compute the new height and width
+                    #      new_h = sqrt(new_area / aspect_ratio), new_w = aspect_ratio * new_h
+                    #      (formula is a little confusing but chatgpt can explain)
+                    #   4. randomly choose the top left corner for the cropped region
+                    #      y = Uniform(0, original_h - new_h)
+                    #      x = Uniform(0, original_w - new_w)
+                    #   5. finally resize the crop to img_size (224x224)
+                    # NOTE: `ratio` is the default parameter and `scale` is modified to match the simmim code
+                    T.RandomResizedCrop(
+                        img_size, scale=(0.67, 1.0), ratio=(3.0 / 4.0, 4.0 / 3.0)
+                    ),  # 224 is commonly used to pretrain classifiers
+                    T.RandomHorizontalFlip(),
+                    _normalize,
+                ]
+            )
+        elif dataset_split == "val":
+            # simmim does not train with a val set but we can use val as a convention for no data augmentations
+            # (besides the resize and statistical transforms)
+            self.transform_img = T.Compose(
+                [
+                    T.Resize((img_size, img_size)),
+                    _normalize,
+                ]
+            )
 
         # create the mask generator which is a binary mask indicating which pixels to mask
         self.mask_generator = MaskGenerator(

@@ -47,15 +47,15 @@ def get_optimizer_params(
     # NOTE: swin and simmmim swin appear to have the same method for setting up the parameter groups
     if strategy == "swin":
         # extract the parameters which should not have weight decay applied
-        #log.info(">>>>>>>>>> Build Optimizer for Pre-training Stage")
+        # log.info(">>>>>>>>>> Build Optimizer for Pre-training Stage")
         skip = {}
         skip_keywords = {}
         if hasattr(model, "no_weight_decay"):
             skip = model.no_weight_decay()
-            #log.info(f"No weight decay: {skip}")
+            # log.info(f"No weight decay: {skip}")
         if hasattr(model, "no_weight_decay_keywords"):
             skip_keywords = model.no_weight_decay_keywords()
-            #log.info(f"No weight decay keywords: {skip_keywords}")
+            # log.info(f"No weight decay keywords: {skip_keywords}")
 
         # the logic should be the same for swin and swin simmim
         param_dicts = get_swin_pretrain_param_groups(model)
@@ -98,8 +98,8 @@ def get_swin_pretrain_param_groups(model, skip_list=(), skip_keywords=()):
             has_decay.append(param)
             has_decay_name.append(name)
 
-    #log.info(f"No decay params: {no_decay_name}")
-    #log.info(f"Has decay params: {has_decay_name}")
+    # log.info(f"No decay params: {no_decay_name}")
+    # log.info(f"Has decay params: {has_decay_name}")
     return [{"params": has_decay}, {"params": no_decay, "weight_decay": 0.0}]
 
 

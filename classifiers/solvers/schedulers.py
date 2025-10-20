@@ -135,8 +135,11 @@ class WarmupCosineSchedule(LambdaLR):
         )
         return max(
             0.0,
-            #0.5 * (1.0 + math.cos(math.pi * float(self.num_cycles) * 2.0 * progress)), # original code
-            0.5 * (1.0 + math.cos(math.pi * float(self.num_cycles) * 1.0 * progress)), # modified code to closer match timm
+            # 0.5 * (1.0 + math.cos(math.pi * float(self.num_cycles) * 2.0 * progress)), # original code
+            0.5
+            * (
+                1.0 + math.cos(math.pi * float(self.num_cycles) * 1.0 * progress)
+            ),  # modified code to closer match timm
         )
 
 

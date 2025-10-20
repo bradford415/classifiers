@@ -80,17 +80,29 @@ def load_model_checkpoint(
     Returns:
         the epoch to resume training on
     """
+    # TODO: consider making this a class method of the model `from_pretrained`
     # Load the torch weights
     weights = torch.load(checkpoint_path, map_location=device, weights_only=True)
 
     # load the state dictionaries for the necessary training modules
     if model is not None:
-        model.load_state_dict(weights["model"])
+        missing_keys, _ = model.load_state_dict(weights["model"])
     if optimizer is not None:
         optimizer.load_state_dict(weights["optimizer"])
     if lr_scheduler is not None:
         lr_scheduler.load_state_dict(weights["lr_scheduler"])
-    start_epoch = weights["epoch"]
+
+    start_epoch = 1
+    if "epoch" in weights:
+        # should only be False if loading a model not trained with this repo
+        start_epoch = weights["epoch"]
+
+    if not missing_keys:
+        print("\nAll keys matched the model when loading its state dict")
+    else:
+        print(
+            f"\nNot all keys matched the model when loading the state dict; missing keys: {missing_keys}"
+        )
 
     return start_epoch
 
