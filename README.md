@@ -2,7 +2,7 @@
 The goal of this repository is to: 
 * Implement powerful classifiers and understand their architecture so they can be used as backbones for other downstream tasks
 * Test and understand various components of deep learning (e.g., learning rate schedulers)
-* Training techniques
+* Exploring pretraining techniques
   * Self-supervised pretraining
   * Classification pretraining
  
@@ -74,11 +74,21 @@ After running the download script, the ImageNet dataset will be organized as sho
 | ViT-B/16   | Scratch    | ImageNet-1k (2012) | 65.7% / 114              | Accuracy was still slowly increasing, but my tiny GPU wanted a break|
 | Swin-B     | Scratch    | ImageNet-1k (2012) | 69.3% / 64               | Accuracy was still increasing, but my tiny GPU wanted a break       |
 
-## Explanations
-* [Swin's relative position bias]()
+
 
 ## Visuals
+
+### SimMIM pixel predictions
+| Backbone   | Epochs     | Dataset            | Base Config                                              | Model config                                        |
+|------------|------------|--------------------|----------------------------------------------------------|-----------------------------------------------------|
+| Swin-B     | 100        | ImageNet-1k (2012) | configs/train-imagenet-swin-simmim-img-192-100-epoch.yaml| configs/simmim/simmim-swin-b-patch-4-window-6.yaml  |                                                                     |
+
+<img src="https://github.com/user-attachments/assets/af890ad4-a503-4814-8fa4-39200af61416" width="500">
+
 ### Learning rate schedulers
 Visuals of the learning rate schedulers to get an intuitive idea of how they work in practice.
 TODO Warmup cosine decay
 
+
+## Explanations
+* [Swin's relative position bias]()
