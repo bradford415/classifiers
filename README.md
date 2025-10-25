@@ -75,19 +75,19 @@ After running the download script, the ImageNet dataset will be organized as sho
 | Swin-B     | Scratch    | ImageNet-1k (2012) | 69.3% / 64               | Accuracy was still increasing, but my tiny GPU wanted a break       |
 
 
-
-## Visuals
-
-### SimMIM pixel predictions
+## SimMIM pixel predictions
 | Backbone   | Epochs     | Dataset            | Base Config                                              | Model config                                        |
 |------------|------------|--------------------|----------------------------------------------------------|-----------------------------------------------------|
 | Swin-B     | 100        | ImageNet-1k (2012) | configs/train-imagenet-swin-simmim-img-192-100-epoch.yaml| configs/simmim/simmim-swin-b-patch-4-window-6.yaml  |                                                                     |
 
 <img src="https://github.com/user-attachments/assets/af890ad4-a503-4814-8fa4-39200af61416" width="500">
 
-### Learning rate schedulers
-Visuals of the learning rate schedulers to get an intuitive idea of how they work in practice.
-TODO Warmup cosine decay
+## Learning rate schedulers
+__Cosine decay with warmup__
+
+This learning rate scheduler performs a linear warmup for `n` epochs and then slowly decays following a cosine wave (half a cosine wave) for the total number of epochs
+
+<img src="https://github.com/user-attachments/assets/c1734027-d1c1-4acb-a0c4-8fc4282baa69" width="500">
 
 
 ## Explanations
