@@ -339,7 +339,7 @@ class ClassificationTrainer(BaseTrainer):
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))
         log.info(
             "Training time for %d epochs (h:mm:ss): %s ",
-            start_epoch - epochs,
+            start_epoch - epochs + 1,
             total_time_str,
         )
 
@@ -600,7 +600,7 @@ class SimMIMTrainer(BaseTrainer):
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))
         log.info(
             "Training time for %d epochs (h:mm:ss): %s ",
-            start_epoch - epochs,
+            epochs - start_epoch + 1,
             total_time_str,
         )
 

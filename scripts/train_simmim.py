@@ -64,6 +64,7 @@ def main(
     else:
         output_path = (
             Path(base_config["output_dir"])
+            / "simmim"
             / base_config["exp_name"]
             / f"{datetime.datetime.now().strftime('%Y_%m_%d-%I_%M_%S_%p')}"
             / "train"

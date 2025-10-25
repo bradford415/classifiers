@@ -1214,7 +1214,7 @@ class SwinTransformerSimMIM(SwinTransformer):
 
         Args:
             x: the input image to be processed; dimensions are its original input size after
-            transformations (e.g., resize to 224x224) (b, c, h, w)
+               transformations (e.g., resize to 224x224) (b, c, h, w)
             mask: a binary mask (1 = masked, 0 = visible) of shape (b, num_patches, num_patches)
                    which is the shape of the patchified image
 
