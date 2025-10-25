@@ -1,7 +1,7 @@
 # Classifiers
-The goal of this repository is to: 
+Purpose of this repository: 
 * Implement powerful classifiers and understand their architecture so they can be used as backbones for other downstream tasks
-* Test and understand various components of deep learning (e.g., learning rate schedulers)
+* Test, visualize, and understand various components of deep learning (e.g., learning rate schedulers)
 * Exploring pretraining techniques
   * Self-supervised pretraining
   * Classification pretraining
