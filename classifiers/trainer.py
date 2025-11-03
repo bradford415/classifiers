@@ -18,6 +18,7 @@ from classifiers.evaluate import (
     load_model_checkpoint,
     topk_accuracy,
 )
+from classifiers.models.swin import SwinTransformer, load_pretrained_simmim_to_swin
 from classifiers.visualize import plot_acc1, plot_loss, plot_lr, plot_masked_patches
 
 log = logging.getLogger(__name__)
@@ -190,13 +191,17 @@ class ClassificationTrainer(BaseTrainer):
         log.info("\ntraining started\n")
 
         if checkpoint_path is not None:
-            start_epoch = load_model_checkpoint(
+            start_epoch = self._load_checkpoint(
                 checkpoint_path, self.model, optimizer, self.device, scheduler
             )
             log.info(
                 "NOTE: A checkpoint file was provided, the model will resume training at epoch %d",
                 start_epoch,
             )
+        
+        # move the model to the GPU here since loading the checkpoint uses CPU operations in 
+        # some cases (interpolating the relative position bias table)
+        self.model.to(self.device)
 
         if self.enable_amp:
             log.info("using mixed precision training")
@@ -472,6 +477,27 @@ class ClassificationTrainer(BaseTrainer):
                 )
 
         return losses
+
+    def _load_checkpoint(
+        self,
+        checkpoint_path: str,
+        model: nn.Module = None,
+        optimizer: nn.Module = None,
+        device=torch.device("cpu"),
+        lr_scheduler: Optional[nn.Module] = None,
+    ):
+        """TODO this probably shouldn't be tied to the model definition
+        Loads the state dictionary for a specific model
+
+        Args:
+
+        """
+        if isinstance(model, SwinTransformer):
+            load_pretrained_simmim_to_swin(checkpoint_path, model, optimizer, device, lr_scheduler)
+        else:
+            raise ValueError(
+                f"state dict loading still needs to be implemented for {type(model)}"
+            )
 
 
 class SimMIMTrainer(BaseTrainer):
@@ -753,6 +779,7 @@ def create_trainer(
     model: nn.Module,
     output_dir: str,
     step_lr_on: str,
+    criterion: Optional[nn.Module] = None, 
     device: torch.device = torch.device("cpu"),
     log_train_steps: int = 20,
     amp_dtype: str = "float16",
@@ -769,6 +796,7 @@ def create_trainer(
             model=model,
             output_dir=output_dir,
             step_lr_on=step_lr_on,
+            criterion=criterion,
             device=device,
             log_train_steps=log_train_steps,
             amp_dtype=amp_dtype,

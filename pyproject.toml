@@ -21,6 +21,7 @@ pyyaml = "*"
 fire = "*"
 torch = "*"
 torchvision = "*"
+timm = "*"
 tqdm = "*"
 pycocotools = "*"
 

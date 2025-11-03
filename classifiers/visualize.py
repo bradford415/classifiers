@@ -20,11 +20,11 @@ def plot_masked_patches(
     patch_size: int = 4,
 ):
     """Visualize the masked patch predictions from simmim pretraining
-    
+
     NOTE: for visualization it's very important to add the normalized predictions
           before undoing the normalization or else they will be on the wrong scale
-          and look off  
-    
+          and look off
+
     Args:
         images: the raw input images (after transforms) that is passed into the simmim model(b, c, h, w)
         masks: a binary mask representing which patches to mask (b, h / patch_size, w / patch_size)
@@ -41,13 +41,13 @@ def plot_masked_patches(
         masks.shape[1:] == images.shape[2:]
     ), f"mask should be the same shape as images, check the patch size"
 
-    # create a masked image and its patch predictions 
+    # create a masked image and its patch predictions
     masked_images = images * (1 - masks.unsqueeze(1))
     predicted_masks = masked_images + (predicted_pixels * masks.unsqueeze(1))
 
     unnormalize_transform = Unnormalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
 
-    # unnormalize 
+    # unnormalize
     untransformed_imgs = unnormalize_transform(images) * 255
     untransformed_masked_imgs = unnormalize_transform(masked_images) * 255
     untransformed_pred_masks = unnormalize_transform(predicted_masks) * 255

@@ -196,12 +196,12 @@ def main(
         classifier_args=classifier_params,
         num_classes=dataset_train.num_classes,
         image_size=base_config["dataset"]["image_size"],
+        checkpoint_path=base_config["train"]["checkpoint_path"],
     )
 
     # Compute and log the number of params in the model
     reproduce.model_info(model)
 
-    model.to(device)
     criterion = nn.CrossEntropyLoss()
 
     log.info("\nclassifier: %s", model_config["classifier"])
@@ -212,13 +212,12 @@ def main(
         model,
         epochs,
         len(dataloader_train),
+        grad_accum_steps,
         solver_config["optimizer"],
         solver_config["lr_scheduler"],
         # NOTE: does not really make sense to have a backbone_lr and optimizer strategy
         #       like in my detectors repo since the backbone is just the classifier
     )
-
-    breakpoint()
 
     total_steps = (len(dataloader_train) * epochs) // grad_accum_steps
     log.info(
@@ -227,18 +226,14 @@ def main(
 
     amp_params = base_config["amp"]
 
-    if "simmim" in classifier_name:
-        trainer_type = "simmim"
-    else:
-        trainer_type = "classification"
-
     # initalize the model trainer based on the type of deep-learning task;
     # currently supports `classification` training and `simmim` pretraining
     trainer = create_trainer(
-        trainer_type=trainer_type,
+        trainer_type="classification",
         model=model,
         output_dir=str(output_path),
         step_lr_on=solver_config["lr_scheduler"]["step_lr_on"],
+        criterion=criterion,
         device=device,
         log_train_steps=base_config["log_train_steps"],
         amp_dtype=amp_params["amp_dtype"],
@@ -247,7 +242,6 @@ def main(
 
     # Build trainer args used for the training
     trainer_args = {
-        "criterion": criterion,
         "dataloader_train": dataloader_train,
         "dataloader_val": dataloader_val,
         "optimizer": optimizer,
