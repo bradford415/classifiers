@@ -68,17 +68,18 @@ After running the download script, the ImageNet dataset will be organized as sho
     	└── 
 
 ## Results
-| Classifier | Pretrained | Dataset            | Accuracy (top 1) / Epoch | Notes                                                               |
-|------------|------------|--------------------|--------------------------|---------------------------------------------------------------------|
-| ResNet50   | Scratch    | ImageNet-1k (2012) | 74.9% / 96               |                                                                     |
-| ViT-B/16   | Scratch    | ImageNet-1k (2012) | 65.7% / 114              | Accuracy was still slowly increasing, but my tiny GPU wanted a break|
-| Swin-B     | Scratch    | ImageNet-1k (2012) | 69.3% / 64               | Accuracy was still increasing, but my tiny GPU wanted a break       |
+| Classifier   | Pretrained   | Dataset            | Accuracy (top 1) / Epoch | Notes                                                               |
+|--------------|--------------|--------------------|--------------------------|---------------------------------------------------------------------|
+| ResNet50     | Scratch      | ImageNet-1k (2012) | 74.9% / 96               |                                                                     |
+| ViT-B/16     | Scratch      | ImageNet-1k (2012) | 65.7% / 114              | Accuracy was still slowly increasing, but my tiny GPU wanted a break|
+| Swin-B Win 7 | Scratch      | ImageNet-1k (2012) | 69.3% / 64               | Accuracy was still increasing, but my tiny GPU wanted a break       |
+| Swin-B Win 7 | SimMIM Win 6 | ImageNet-1k (2012) | 74.4% / 65               | Set to 300 epochs so the LR scheduler was not optimize              |
 
 
 ## SimMIM pixel predictions
-| Backbone   | Epochs     | Dataset            | Base Config                                              | Model config                                        |
-|------------|------------|--------------------|----------------------------------------------------------|-----------------------------------------------------|
-| Swin-B     | 100        | ImageNet-1k (2012) | configs/train-imagenet-swin-simmim-img-192-100-epoch.yaml| configs/simmim/simmim-swin-b-patch-4-window-6.yaml  |                                                                     |
+| Backbone   | Epochs     | Dataset            | Base Config                                                | Model config                                          |
+|------------|------------|--------------------|------------------------------------------------------------|-------------------------------------------------------|
+| Swin-B     | 100        | ImageNet-1k (2012) | `configs/train-imagenet-swin-simmim-img-192-100-epoch.yaml`| `configs/simmim/simmim-swin-b-patch-4-window-6.yaml`  |                                                                     |
 
 <img src="https://github.com/user-attachments/assets/af890ad4-a503-4814-8fa4-39200af61416" width="500">
 
