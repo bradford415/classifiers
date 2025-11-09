@@ -1,0 +1,98 @@
+# Base config file which stores the default parameters which apply to all model configurations
+---
+
+# Whether to run in development/debugging mode; this only uses a few samples in in the train/val dataset
+# to quickly run the code as well as sets num_workers=0
+dev_mode: False
+
+amp:
+  # using amp is determined by device but one can override it here; True = disable amp
+  disable_amp: False
+
+  amp_dtype: "float16" # "float16" or "bfloat16"
+
+# Base directory for output files
+output_dir: "output"
+
+# Experiment name; this will be used for the output directory; use "development" when developing
+exp_name: "development"
+
+# Name of dataset; must be one of the names in the dataset_map dict
+dataset_name: "ImageNetSimMIM"
+
+# Log the train progress every n steps
+log_train_steps: 60
+
+# Parameters for the dataset class
+dataset:
+  # whether to use simmim pretraining (True) or regular classification training (False)
+  simmim: True
+ 
+  # Path to the root of the dataset; detects which path to use based on device
+  root: "/mnt/d/datasets/imagenet" # linux/windows path
+  root_mac: "/Users/bsele/datasets/imagenet-2012" # mac path
+
+  # The image size to resize and crop images to; e.g., 224 = 224x224
+  image_size: 192
+
+  # Number of CPU processes the next sample in the dataset; use 0 to only use the main process
+  num_workers: 4
+
+  # the percentages of patches to mask in thep atchified image
+  mask_ratio: 0.6
+
+  # the size of the masked patches; 
+  # e.g., mask_patch size=32 & patch_size=4 -> 32/4 = 8 patches are masked for 1 masked patch
+  mask_patch_size: 32
+
+train:
+  max_norm: 5.0
+  
+  # batches & epochs
+  batch_size: 64
+  effective_batch_size: 1024  # batch_size * gradient_accumulation_steps
+  validation_batch_size: 32
+  epochs: 100
+
+  # Number of epochs to checkpoint after; use 'null' to turn off checkpointing
+  ckpt_epochs: 5
+
+  # Path of weights file (.pt) to resume training; 
+  # use `null` to train a new model from scratch
+  checkpoint_path: #/home/bselee/programming/classifiers/output/simmim/development/2025_10_19-09_43_58_PM/train/checkpoints/checkpoint0020.pt #"/home/bselee/programming/classifiers/output/development/2025_10_15-10_08_21_PM/train/checkpoints/checkpoint0020.pt"
+
+# solver params: optimzer, lr scheduler, etc.
+solver:
+
+  optimizer:
+    # The optimizer to use; must be one of the names in the optimizer_map dict
+    name: "adamw"
+
+    params:
+      lr: 0.0001 # NOTE: may have to scale lr like the do in code but unsure; i think since I handle gradietn accumulation different I don't
+      eps: 1.e-8
+      betas: [0.9, 0.999]
+      weight_decay: 0.05
+
+  # SimMIM paper mentions cosine annealing for scheuduler but their ablation studies
+  # show th multistep LR achieves bettter performance Appendix B.; the default 800 epoch config
+  # also uses the multistep_lr; the 100 epoch setting uses a cosine anneal with warm up
+  lr_scheduler:
+    name: "warmup_cosine_decay"
+    step_lr_on: "steps" # step the lr after n "epochs" or "steps"
+
+    params:
+      num_cycles: 1.0 # 1 => only one decay (half a cosine wave)
+      warmup_epochs: 10
+      warmup_min_lr: 1.e-5
+
+# GPU parameters
+cuda:  
+  # List of GPU devices to use
+  gpus: [1]
+
+
+# Reproducibility information
+reproducibility:
+  seed: 42
+

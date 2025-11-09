@@ -1,8 +1,14 @@
 import math
+import logging
 from typing import Optional, Union
 
+import numpy as np
 import torch
+from scipy.interpolate import RegularGridInterpolator
 from torch import nn
+from torch.nn import functional as F
+
+log = logging.getLogger(__name__)
 
 
 def window_partition(x: torch.Tensor, window_size: int):
@@ -821,6 +827,10 @@ class SwinTransformer(nn.Module):
         """
         super().__init__()
 
+        self.img_size = img_size
+        self.patch_size = patch_size
+        self.in_chans = in_chans
+
         self.num_layers = len(depths)
         self.patch_emb_dim = patch_emb_dim
         self.ape = ape
@@ -910,6 +920,8 @@ class SwinTransformer(nn.Module):
 
         self.norm = norm_layer(self.num_features)
 
+        self.num_classes = num_classes
+
         # performs average pooling on the output feature map of the last stage
         # along the token dim for classification; using 1 is the same as GlobalAveragePooling;
         # this is pretty much the same as averaging the spatial dimensions like in a feature map,
@@ -963,7 +975,6 @@ class SwinTransformer(nn.Module):
         for layer in self.layers:
             x = layer(x)
 
-        ##### start here
         # layer norm across the feature dim (channels); nn.LayerNorm always operates on the last dimension;
         # this means that for shape (b, num_tokens, c), it will normalize across c, for every token in each batch
         x = self.norm(x)  # B L C
@@ -1111,7 +1122,7 @@ def trunc_normal_(
 
     Fills the input Tensor with values drawn from a truncated
     normal distribution. The values are effectively drawn from the
-    normal distribution :math:`\mathcal{N}(\text{mean}, \text{std}^2)`
+    normal distribution :math: 'mathcal{N}(\text{mean}, \text{std}^2)`
     with values outside :math:`[a, b]` redrawn until they are within
     the bounds. The method used for generating the random values works
     best when :math:`a \leq \text{mean} \leq b`.
@@ -1170,90 +1181,206 @@ def trunc_normal_(
         return tensor
 
 
-class SwinTransformerSimMIM(SwinTransformer):
-    """Swin Transformer for SimMIM
+def load_pretrained_simmim_to_swin(
+    checkpoint_path: str,
+    model: nn.Module = None,
+    optimizer: nn.Module = None,
+    device=torch.device("cpu"),
+    lr_scheduler: Optional[nn.Module] = None,
+):
+    """Load the checkpoints of a trained or pretrained model from the state_dict file;
+    this could be from a fully trained model or a partially trained model that you want
+    to resume training from.
 
-    Used to pretrain the SwinTransformer feature extractor using self-supervised learning;
-    once trained, the SwinTransformer can be used to fine-tune on downstream tasks like object detection
+    Args:
+        checkpoint_path: path to the weights file to resume training from
+        model: the model being trained
+        optimizer: the optimizer used during training
+        device: the device to map the checkpoints to
+        lr_scheduler: the learning rate scheduler used during training
 
-    Paper: https://arxiv.org/pdf/2111.09886
+    Returns:
+        the epoch to resume training on
     """
+    # Load the model's state_dict
+    state_dict = torch.load(checkpoint_path, map_location=torch.device("cpu"), weights_only=True)
+    
+    param_keys = state_dict["model"]
+    
+    if any([True if "encoder." in name else False for name in param_keys.keys() ]):
+        log.info("Detected pretrained simmim into swin; removing 'encoder.' prefix from state_dict keys")
+        param_keys = {name.replace("encoder.", ""): val for name, val in param_keys.items() if name.startswith("encoder.")}
+    else:
+        log.info("Non-pretrained simmim detected; loading weights normally")
 
-    def __init__(self, **swin_kwargs):
-        """Initializes the SwinTransformer for SimMIM pretraining
+    # load the state dictionaries for the necessary training modules
+    if model is not None:
+        breakpoint()
+        # start here see if the keys remapped correctly
+        remapped_param_keys = remap_pretrained_keys_swin(model, param_keys)
+        missing_keys, _ = model.load_state_dict(remapped_param_keys)
+    if optimizer is not None:
+        optimizer.load_state_dict(state_dict["optimizer"])
+    if lr_scheduler is not None:
+        lr_scheduler.load_state_dict(state_dict["lr_scheduler"])
 
-        Args:
-            swin_kwargs: keyword arguments for the SwinTransformer classification model;
-                         see SwinTransformer().__init__() for the specifc arguments
-        """
-        # initalize the SwinTransformer
-        super().__init__(**swin_kwargs)
+    start_epoch = 1
+    if "epoch" in weights:
+        # should only be False if loading a model not trained with this repo
+        start_epoch = weights["epoch"]
 
-        assert self.num_classes == 0
+    if not missing_keys:
+        print("\nAll keys matched the model when loading its state dict")
+    else:
+        print(
+            f"\nNot all keys matched the model when loading the state dict; missing keys: {missing_keys}"
+        )
 
-        # create a single masked_token with the same embedding dimension
-        # as the SwinTransformer patchification (1, 1, patch_emb_dim); during the forward
-        # pass, the token will be expanded to the batch size and number of patches
-        # (b, num_patches, patch_emb_dim)
-        self.mask_token = nn.Parameter(torch.zeros(1, 1, self.patch_emb_dim))
-        trunc_normal_(self.mask_token, mean=0.0, std=0.02)
+    return start_epoch
 
-    def forward(self, x, mask):
-        """Train the SwinTransformer using self-supervised learning (SimMIM)
 
-        Args:
-            x: the input image to be processed; dimensions are its original input size after
-            transformations (e.g., resize to 224x224) (b, c, h, w)
-            mask: a binary mask (1 = masked, 0 = visible) of shape (b, num_patches, num_patches) 
-                   which is the shape of the patchified image
-        """
-        # embed image into flattened patches using a cnn (b, num_patches, patch_emb_dim)
-        x = self.patch_embed(x)
+def remap_pretrained_keys_swin(model, checkpoint_model):
+    """Remap a simmim pretrained swin model when the window size differs
+    
+    This essentially uses a geometric interpolation (a geometric series to exponetially grow
+    the distances at each cell) to convert a relative position bias table of one size
+    to another size (e.g., a simmim model trained using a window size of 6 but finetuning
+    swin on a window size of 7); this code assumes that cells towards the center are more
+    impactful than cells further away from the center in the table
+    
+    Additionally, the following keys are deleted because they're always reinitialized
+    relative_position_index, relative_coords_table, and attn_mask
+    
+    NOTE: the interpolation function was modified because scipy.interpolate.interp2d
+    is deprecated which was in the original swin code
+    
+    Args:
+        model: the model to the load the weights in
+        chckpoint_model: the model to load the weights from
+    """
+    state_dict = model.state_dict()
+    
+    # Geometric interpolation when pre-trained patch size mismatch with fine-tuned patch size
+    all_keys = list(checkpoint_model.keys())
+    for key in all_keys:
+        if "relative_position_bias_table" in key:
+            relative_position_bias_table_pretrained = checkpoint_model[key]
+            relative_position_bias_table_current = state_dict[key]
+            
+            # extract the number of relative positions (L) and number of heads (nH)
+            L1, nH1 = relative_position_bias_table_pretrained.size()
+            L2, nH2 = relative_position_bias_table_current.size()
 
-        assert mask is not None
+            if nH1 != nH2:
+                # number of heads must match or we cannot load the pretrained model
+                # if this happens its likey that we pretrained a different swin variant than
+                # we're trying to finetune (e.g., swin-b)
+                logger.info(f"Error in loading {key}, the number of attentions heads differ")
+            else:
+                if L1 != L2:
+                    log.info(f"{key}: Interpolate relative_position_bias_table using geo.")
+                    
+                    # get the length of one side of each table; relative position bias table is a 
+                    # flattened square
+                    src_size = int(L1 ** 0.5)
+                    dst_size = int(L2 ** 0.5)
 
-        # extract the patches shape (L = sequence length/number of patches)
-        B, L, _ = x.shape
+                    def geometric_progression(a, r, n):
+                        """Computes the sum of the first n terms of a geometric series
+                        (n=num terms, r=geometric/common ratio, a=first term in the sequence)
+                        """
+                        return a * (1.0 - r ** n) / (1.0 - r)
 
-        # expand the single mask token to the batch size and number of patches; expand
-        # only creates a view so the memory is not copied, this means every masked patch
-        # points to the same underlying parameters as the singular mask token initially
-        # created in __init__(); operations on any masked patch will be accounted for in
-        # backprop and the single mask tokens parameters will be updated accordingly
-        # (I think autograd sums the gradients from each patch)
-        # shape (b, num_patches, patch_embed_dim)
-        mask_tokens = self.mask_token.expand(B, L, -1)
+                    # compute the geometric ratio, q, such that the sum of distances in the 
+                    # geometric series matches half the target table size using binary search 
+                    # between [1.01, 1.5]; the sum of the geometric series tell us the full distance
+                    # (i.e., the sum of each cell distance in the table); q represents the growth factor 
+                    # in the geometric sequence and controls how quickly the spacing expands away from the 
+                    # center: 1,1⋅q,1⋅q2,1⋅q3,…; each term in geometric progression/sequence tells us the 
+                    # distance between each cell in the grid, this process assumes that the center of the 
+                    # bias table is more important than the ones further out since it increases exponentially; 
+                    # we use half the table size to represent the distance in each direction
+                    left, right = 1.01, 1.5
+                    while right - left > 1e-6:
+                        q = (left + right) / 2.0
+                        gp = geometric_progression(1, q, src_size // 2)
+                        if gp > dst_size // 2:
+                            right = q
+                        else:
+                            left = q
 
-        # flatten the binary mask to (b, num_patches*num_patches, 1)
-        w = mask.flatten(1).unsqueeze(-1).type_as(mask_tokens)
-        
-        assert w.shape[1] == mask_tokens.shape[1]
-        
-        
-        ### start here and figure out what this does, then continue with forward method
-        x = x * (1.0 - w) + mask_tokens * w
+                    # if q > 1.090307:
+                    #     q = 1.090307
 
-        if self.ape:
-            x = x + self.absolute_pos_embed
-        x = self.pos_drop(x)
+                    # build the source positions by
+                    # computing the cumulative sum of the geometric series; each term of the 
+                    # geometric series represents the distance between consecutive points
+                    # Example:
+                    #   1 → first step from center
+                    #   q → distance from first to second point
+                    #   q^2 → distance from second to third point
+                    # but we want actual coordinates so we take the cumulative sum
+                    dis = []
+                    cur = 1
+                    for i in range(src_size // 2):
+                        dis.append(cur)
+                        cur += q ** (i + 1)
 
-        for layer in self.layers:
-            x = layer(x)
-        x = self.norm(x)
+                    # mirror the positions for the negative side so now x and y
+                    # represent full grid coordinates centered at 0
+                    r_ids = [-_ for _ in reversed(dis)]
+                    x = r_ids + [0] + dis
+                    y = r_ids + [0] + dis
 
-        x = x.transpose(1, 2)
-        B, C, L = x.shape
-        H = W = int(L**0.5)
-        x = x.reshape(B, C, H, W)
-        return x
+                    # define the target positions of the new relative position bias grid 
+                    # [-t, t] e.g., win size 7 -> [-6, 6]; later we'll interpolate this
+                    # original values onto this grid
+                    t = dst_size // 2.0
+                    dx = np.arange(-t, t + 0.1, 1.0)
+                    dy = np.arange(-t, t + 0.1, 1.0)
 
-    @torch.jit.ignore
-    def no_weight_decay(self):
-        return super().no_weight_decay() | {"mask_token"}
+                    log.info("Original positions = %s" % str(x))
+                    log.info("Target positions = %s" % str(dx))
+                    
+                    # NOTE: this code was added because 
+                    # scipy.interpolate.interp2d is deprecated (in original swin code)
+                    DX, DY = np.meshgrid(dx, dy, indexing='ij')
+                    query_points = np.stack([DX.ravel(), DY.ravel()], axis=1)
+
+                    # interpolate each attention head (since there's a bias table per head)
+                    all_rel_pos_bias = []
+                    for i in range(nH1):
+                        z = relative_position_bias_table_pretrained[:, i].view(src_size, src_size).float().numpy()
+                        f_cubic = RegularGridInterpolator((x, y), z, method='cubic')
+                        all_rel_pos_bias.append(torch.Tensor(f_cubic(query_points)).contiguous().view(-1, 1).to(
+                            relative_position_bias_table_pretrained.device))
+
+                    # stack the newly interpolated bias table into the tensor and update the param key
+                    new_rel_pos_bias = torch.cat(all_rel_pos_bias, dim=-1)
+                    checkpoint_model[key] = new_rel_pos_bias
+
+    # delete relative_position_index since we always re-init it
+    relative_position_index_keys = [k for k in checkpoint_model.keys() if "relative_position_index" in k]
+    for k in relative_position_index_keys:
+        del checkpoint_model[k]
+
+    # delete relative_coords_table since we always re-init it
+    relative_coords_table_keys = [k for k in checkpoint_model.keys() if "relative_coords_table" in k]
+    for k in relative_coords_table_keys:
+        del checkpoint_model[k]
+
+    # delete attn_mask since we always re-init it
+    attn_mask_keys = [k for k in checkpoint_model.keys() if "attn_mask" in k]
+    for k in attn_mask_keys:
+        del checkpoint_model[k]
+
+    return checkpoint_model
 
 
 def build_swin(
-    num_classes: int, img_size: Union[int, tuple], swin_params: dict[str, any]
+    num_classes: int,
+    img_size: Union[int, tuple],
+    swin_params: dict[str, any],
 ):
     """Initalize the Swin Transformer model
 
@@ -1264,26 +1391,27 @@ def build_swin(
 
     layernorm = nn.LayerNorm
 
-    swin_model = SwinTransformer(
-        img_size=img_size,
-        patch_size=swin_params["patch_size"],
-        in_chans=3,  # for RGB images
-        num_classes=num_classes,
-        patch_emb_dim=swin_params["patch_emb_dim"],
-        depths=swin_params["depths"],
-        num_heads=swin_params["num_heads"],
-        window_size=swin_params["window_size"],
-        mlp_ratio=swin_params["mlp_ratio"],
-        qkv_bias=True,
-        qk_scale=None,
-        dropout=swin_params["dropout"],
-        attn_drop_rate=swin_params["attn_dropout"],
-        drop_path_rate=swin_params["drop_path_rate"],
-        norm_layer=layernorm,
-        ape=swin_params["ape"],
-        patch_norm=swin_params["patch_norm"],
-        use_checkpoint=swin_params["use_activation_checkpointing"],
-        fused_window_process=False,
-    )
+    swin_args = {
+        "img_size": img_size,
+        "patch_size": swin_params["patch_size"],
+        "in_chans": 3,  # for RGB images
+        "num_classes": num_classes,
+        "patch_emb_dim": swin_params["patch_emb_dim"],
+        "depths": swin_params["depths"],
+        "num_heads": swin_params["num_heads"],
+        "window_size": swin_params["window_size"],
+        "mlp_ratio": swin_params["mlp_ratio"],
+        "qkv_bias": True,
+        "qk_scale": None,
+        "dropout": swin_params["dropout"],
+        "attn_drop_rate": swin_params["attn_dropout"],
+        "drop_path_rate": swin_params["drop_path_rate"],
+        "norm_layer": layernorm,
+        "ape": swin_params["ape"],
+        "patch_norm": swin_params["patch_norm"],
+        "use_checkpoint": swin_params["use_activation_checkpointing"],
+        "fused_window_process": False,
+    }
+    swin_model = SwinTransformer(**swin_args)
 
     return swin_model

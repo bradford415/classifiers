@@ -9,13 +9,13 @@ from fire import Fire
 from torch import nn
 from torch.utils.data import DataLoader
 
-from classifiers.dataset.imagenet import build_imagenet
-from classifiers.models.create import create_classifier
+from classifiers.dataset.imagenet import build_imagenet_simmim, collate_fn_simmim
+from classifiers.models.create import create_simmim_model
 from classifiers.solvers.build import build_solvers
 from classifiers.trainer import create_trainer
 from classifiers.utils import reproduce
 
-dataset_map: Dict[str, Any] = {"ImageNet": build_imagenet}
+dataset_map: Dict[str, Any] = {"ImageNetSimMIM": build_imagenet_simmim}
 
 # Initialize the root logger
 log = logging.getLogger(__name__)
@@ -64,6 +64,7 @@ def main(
     else:
         output_path = (
             Path(base_config["output_dir"])
+            / "simmim"
             / base_config["exp_name"]
             / f"{datetime.datetime.now().strftime('%Y_%m_%d-%I_%M_%S_%p')}"
             / "train"
@@ -104,16 +105,13 @@ def main(
 
     if dev_mode:
         log.info("NOTE: executing in dev mode")
-        train_args["batch_size"] = 2
-        train_args["effective_batch_size"] = 4
-        train_args["validation_batch_size"] = 2
+        train_args["batch_size"] = 16
+        train_args["effective_batch_size"] = 32
 
     # Extract training and val params
     batch_size = train_args["batch_size"]
     effective_bs = train_args["effective_batch_size"]
     epochs = train_args["epochs"]
-
-    val_batch_size = train_args["batch_size"]
 
     image_size = base_config["dataset"]["image_size"]
 
@@ -121,11 +119,6 @@ def main(
     train_kwargs = {
         "batch_size": batch_size,
         "shuffle": True,
-        "num_workers": base_config["dataset"]["num_workers"] if not dev_mode else 0,
-    }
-    val_kwargs = {
-        "batch_size": val_batch_size,
-        "shuffle": False,
         "num_workers": base_config["dataset"]["num_workers"] if not dev_mode else 0,
     }
 
@@ -163,25 +156,18 @@ def main(
         }
 
         train_kwargs.update(gpu_kwargs)
-        val_kwargs.update(gpu_kwargs)
 
     dataset_kwargs = {"root": base_config["dataset"]["root"], "image_size": image_size}
     dataset_train = dataset_map[base_config["dataset_name"]](
         dataset_split="train", dev_mode=dev_mode, **dataset_kwargs
     )
-    dataset_val = dataset_map[base_config["dataset_name"]](
-        dataset_split="val", dev_mode=dev_mode, **dataset_kwargs
-    )
 
+    # TODO: make distributed
     dataloader_train = DataLoader(
         dataset_train,
         drop_last=True,
+        collate_fn=collate_fn_simmim,
         **train_kwargs,
-    )
-    dataloader_val = DataLoader(
-        dataset_val,
-        drop_last=True,
-        **val_kwargs,
     )
 
     log.info("\nusing image size %d\n", image_size)
@@ -189,12 +175,13 @@ def main(
     image_size = base_config["dataset"].get("image_size")
 
     # Initalize classifier
-    classifier_name = model_config["classifier"]
-    classifier_params = model_config["params"]
-    model = create_classifier(
-        classifier_name=classifier_name,
-        classifier_args=classifier_params,
-        num_classes=dataset_train.num_classes,
+    # TODO: make distributed
+    backbone_name = model_config["backbone"]
+    backbone_params = model_config["params"]
+    model = create_simmim_model(
+        backbone_name=backbone_name,
+        backbone_args=backbone_params,
+        # NOTE: num_classes is hardcoded as 0 since there's no classification head in simmim
         image_size=base_config["dataset"]["image_size"],
     )
 
@@ -202,20 +189,17 @@ def main(
     reproduce.model_info(model)
 
     model.to(device)
-    criterion = nn.CrossEntropyLoss()
 
-    log.info("\nclassifier: %s", model_config["classifier"])
+    log.info("\backbone: %s", model_config["backbone"])
 
     solver_config = base_config["solver"]
-    ## start here, understand the lr scheduler
     optimizer, lr_scheduler = build_solvers(
         model,
         epochs,
         len(dataloader_train),
+        grad_accum_steps,
         solver_config["optimizer"],
         solver_config["lr_scheduler"],
-        # NOTE: does not really make sense to have a backbone_lr and optimizer strategy
-        #       like in my detectors repo since the backbone is just the classifier
     )
 
     total_steps = (len(dataloader_train) * epochs) // grad_accum_steps
@@ -225,15 +209,10 @@ def main(
 
     amp_params = base_config["amp"]
 
-    if "simmim" in classifier_name:
-        trainer_type = "simmim"
-    else:
-        trainer_type = "classification"
-
     # initalize the model trainer based on the type of deep-learning task;
     # currently supports `classification` training and `simmim` pretraining
     trainer = create_trainer(
-        trainer_type=trainer_type,
+        trainer_type="simmim",
         model=model,
         output_dir=str(output_path),
         step_lr_on=solver_config["lr_scheduler"]["step_lr_on"],
@@ -245,9 +224,7 @@ def main(
 
     # Build trainer args used for the training
     trainer_args = {
-        "criterion": criterion,
         "dataloader_train": dataloader_train,
-        "dataloader_val": dataloader_val,
         "optimizer": optimizer,
         "scheduler": lr_scheduler,
         "grad_accum_steps": grad_accum_steps,

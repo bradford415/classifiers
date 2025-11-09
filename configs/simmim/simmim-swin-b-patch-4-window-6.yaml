@@ -1,0 +1,64 @@
+# Configuration file for the classifier swin-B model
+# Filename convention: {classifier_name}-{variant}-{modifiers}.yaml
+# 
+# Architecture defined in https://arxiv.org/pdf/2103.14030 Section 3.3
+---
+
+# the backbone to train with simmim
+backbone: "swin-b"
+
+encoder_stride: 32
+
+# Swin transformer parameters for SimMIM
+params:
+  # classification method to use and pass into the final MLP; 'cls' = extra token only, 'mean' = globally average the patches and the token
+  pool: "cls"
+
+  # the spatial size of the patch; 4 -> 4x4 patch size
+  patch_size: 4
+
+  # the number of square patches in the window; attention is computed locally within
+  # these windows; e.g., 7 = 7x7 patches in a window
+  window_size: 6
+
+  # whether to normalize after the patch embedding
+  patch_norm: True
+
+  # patch embedding dimension and input dimension to each swin layer;
+  # patches are created through Conv2D so patch_emb_dim is the number of filters
+  patch_emb_dim: 128
+
+  # number of transformer blocks in each stage of swin
+  depths: [2, 2, 18, 2]
+
+  # TODO
+  num_heads: [4, 8, 16, 32]
+
+  # ratio of mlp hidden dim to embedding dim.
+  mlp_ratio: 4.0
+
+  # dropout p to use for the: projection after attention, the relative postion embeddings and TODO something w/ BasicLayer
+  dropout: 0.0
+
+  # dropout for the attention weight
+  attn_dropout: 0.0
+
+  # the maximum probability for stochastic depth; this is the probability of randomly skipping an
+  # entire residual branch in a block during training which acts as a form of regularization;
+  # this means that in a residual connection [x + F(x)], the probability that F(x) is skipped 
+  # (multiplied by 0);
+  # this follows a decay rule linspace(0, drop_path_rate, num_blocks) so every swin block has a 
+  # probablity of the residual being skipped; the earlier layers have a lower probablity and the
+  # later layers have a higher probability;
+  # described in Section A2.1 in the paper
+  drop_path_rate: 0.5
+
+  # TODO
+  ape: False
+
+  # TODO:
+  patch_norm: True
+
+  # whether to use activation checkpointing to save memory
+  use_activation_checkpointing: False
+

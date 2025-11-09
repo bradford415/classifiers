@@ -80,36 +80,61 @@ def load_model_checkpoint(
     Returns:
         the epoch to resume training on
     """
+    # TODO: consider making this a class method of the model `from_pretrained`
     # Load the torch weights
     weights = torch.load(checkpoint_path, map_location=device, weights_only=True)
 
     # load the state dictionaries for the necessary training modules
     if model is not None:
-        model.load_state_dict(weights["model"])
+        missing_keys, _ = model.load_state_dict(weights["model"])
     if optimizer is not None:
         optimizer.load_state_dict(weights["optimizer"])
     if lr_scheduler is not None:
         lr_scheduler.load_state_dict(weights["lr_scheduler"])
-    start_epoch = weights["epoch"]
+
+    start_epoch = 1
+    if "epoch" in weights:
+        # should only be False if loading a model not trained with this repo
+        start_epoch = weights["epoch"]
+
+    if not missing_keys:
+        print("\nAll keys matched the model when loading its state dict")
+    else:
+        print(
+            f"\nNot all keys matched the model when loading the state dict; missing keys: {missing_keys}"
+        )
 
     return start_epoch
 
 
-class AverageMeter(object):
+class AverageMeter:
     """Computes and stores the average and current value"""
 
     def __init__(self):
         self.reset()
 
     def reset(self):
+        """Zero out all the values"""
         self.val = 0
         self.avg = 0
         self.sum = 0
         self.count = 0
 
     def update(self, val, n=1):
+        """Update the meter with the new value
+
+        Args:
+            val: new value to add
+            n: weight of the new value (e.g., batch size); note that
+                the sum is multiplied by `n`, this is because the loss
+                is typically averged over the batch in the loss function so when we
+                go to compute the average loss for the entire epoch we need to weight
+                the loss by the batch size (essentially undoes the average in the loss function)
+        """
         self.val = val
-        self.sum += val * n
+        self.sum += (
+            val * n
+        )  # multiply by n to get the total loss over the batch (undo the average in the loss function)
         self.count += n
         self.avg = self.sum / self.count
 

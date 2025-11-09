@@ -65,7 +65,8 @@ def make_imagenet_transforms(dataset_split: str, img_size: int = 224):
     elif dataset_split == "val":
         return T.Compose(
             [
-                T.Resize(256),
+                # T.Resize(256), # initially I had 256 but I think this should be 224 since it's what it was trained on
+                T.Resize(224),
                 T.CenterCrop(img_size),
                 normalize,
             ]
@@ -126,9 +127,8 @@ class MaskGenerator:
                   e.g., input = 192x192, mask_patch_size = 32x32, patch_size = 4x4
                   then the returned mask will be 48x48
         """
-        ### start here
-        breakpoint()
-        # randomly select indices of masked patches to mask TODO put shape
+        # randomly select indices of masked patches to mask (self.mask_count,)
+        # self.token_count is the total number of patches in the image
         mask_idx = np.random.permutation(self.token_count)[: self.mask_count]
 
         # boolen mask where 1 indicates the patch is masked and 0 indicates it is visible
@@ -154,7 +154,7 @@ class SimMIMTransform:
     def __init__(
         self,
         dataset_split: str,
-        img_size: int = 224,
+        img_size: int = 192,
         mask_patch_size: int = 32,
         model_patch_size: int = 4,
         mask_ratio: float = 0.6,
@@ -173,29 +173,37 @@ class SimMIMTransform:
             [T.ToTensor(), T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])]
         )
 
-        # TODO: determine if I need separate augmentations for train and val
-
-        self.transform_img = T.Compose(
-            [
-                # random resize crop works as follows:
-                #   1. first compute the new area by randomly choosing a scale
-                #      between [67%, 100%] and multiply by the area of the original image
-                #   2. then randomly pick an aspect ratio uniform(3/4, 4/3)
-                #   3. from the new area and aspect ratio, compute the new height and width
-                #      new_h = sqrt(new_area / aspect_ratio), new_w = aspect_ratio * new_h
-                #      (formula is a little confusing but chatgpt can explain)
-                #   4. randomly choose the top left corner for the cropped region
-                #      y = Uniform(0, original_h - new_h)
-                #      x = Uniform(0, original_w - new_w)
-                #   5. finally resize the crop to img_size (224x224)
-                # NOTE: `ratio` is the default parameter and `scale` is modified to match the simmim code
-                T.RandomResizedCrop(
-                    img_size, scale=(0.67, 1.0), ratio=(3.0 / 4.0, 4.0 / 3.0)
-                ),  # 224 is commonly used to pretrain classifiers
-                T.RandomHorizontalFlip(),
-                _normalize,
-            ]
-        )
+        if dataset_split == "train":
+            self.transform_img = T.Compose(
+                [
+                    # random resize crop works as follows:
+                    #   1. first compute the new area by randomly choosing a scale
+                    #      between [67%, 100%] and multiply by the area of the original image
+                    #   2. then randomly pick an aspect ratio uniform(3/4, 4/3)
+                    #   3. from the new area and aspect ratio, compute the new height and width
+                    #      new_h = sqrt(new_area / aspect_ratio), new_w = aspect_ratio * new_h
+                    #      (formula is a little confusing but chatgpt can explain)
+                    #   4. randomly choose the top left corner for the cropped region
+                    #      y = Uniform(0, original_h - new_h)
+                    #      x = Uniform(0, original_w - new_w)
+                    #   5. finally resize the crop to img_size (224x224)
+                    # NOTE: `ratio` is the default parameter and `scale` is modified to match the simmim code
+                    T.RandomResizedCrop(
+                        img_size, scale=(0.67, 1.0), ratio=(3.0 / 4.0, 4.0 / 3.0)
+                    ),  # 224 is commonly used to pretrain classifiers
+                    T.RandomHorizontalFlip(),
+                    _normalize,
+                ]
+            )
+        elif dataset_split == "val":
+            # simmim does not train with a val set but we can use val as a convention for no data augmentations
+            # (besides the resize and statistical transforms)
+            self.transform_img = T.Compose(
+                [
+                    T.Resize((img_size, img_size)),
+                    _normalize,
+                ]
+            )
 
         # create the mask generator which is a binary mask indicating which pixels to mask
         self.mask_generator = MaskGenerator(
@@ -223,21 +231,33 @@ class SimMIMTransform:
         return img, mask
 
 
-def collate_fn(batch):
-    """Custom collate function to handle batches where each sample is a tuple of (image, mask)
+def collate_fn_simmim(batch: list[tuple[tuple, int]]):
+    """Custom collate function to handle batches where each sample is a
+    tuple of ((image, mask), target)
 
     Args:
-        batch: a list of samples where each sample is a tuple (image, mask)
+        batch: a list of samples for simmim where each sample is a tuple ((image, mask), target)
+               - image: the transformed image tensor (c, h, w)
+               - mask: the binary mask representing which patches to mask (1 = masked, 0 = visible)
+                       (num_patches, num_patches)
+                - target: the class label of the image (ignored during simmim pretraining)
+
+    Returns:
+        a 3 element list containing:
+            1. a batch of images (b, c, h, w)
+            2. a batch of masks (b, num_patches, num_patches)
+            3. a batch of class labels (b,); again, I think this is ignored in simmim pretraining
     """
-    breakpoint()
     if not isinstance(batch[0][0], tuple):
         # use the standard pytorch collate function if the first element is not a tuple
         return default_collate(batch)
     else:
         # simmmim case
-        # TODO comment this
         batch_num = len(batch)
         ret = []
+
+        # loop through the image and mask tuple to create a two element list containing
+        # a batch of images (b, c, h, w) and a batch of masks (b, num_patches, num_patches)
         for item_idx in range(len(batch[0][0])):
             if batch[0][0][item_idx] is None:
                 ret.append(None)
@@ -245,6 +265,8 @@ def collate_fn(batch):
                 ret.append(
                     default_collate([batch[i][0][item_idx] for i in range(batch_num)])
                 )
+
+        # create a batch of class labels for each image (b,)
         ret.append(default_collate([batch[i][1] for i in range(batch_num)]))
         return ret
 

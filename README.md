@@ -1,10 +1,24 @@
 # Classifiers
-The goal of this repository is to: 
+Purpose of this repository: 
 * Implement powerful classifiers and understand their architecture so they can be used as backbones for other downstream tasks
-* Test and understand various components of deep learning (e.g., learning rate schedulers)
-* Training techniques
+* Test, visualize, and understand various components of deep learning (e.g., learning rate schedulers)
+* Exploring pretraining techniques
   * Self-supervised pretraining
   * Classification pretraining
+ 
+## Environment setup
+
+__linux__
+```bash
+make create
+```
+
+__mac__
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+make install_reqs_mac
+```
 
 ## Training a model
 This project is designed to use the configuration specified in `configs/`, but for ease of use the CLI arguments specified below will overwrite the main default config parameters for quick setup.
@@ -32,8 +46,10 @@ Download the ImageNet and prepare it for training with the following commands:
 cd data
 bash get_imagenet_2012.sh
 ```
+<details>
+  <summary>Folder structure</summary>
 
-After running the download script, the ImageNet dataset will be organized as shown below. The raw dataset only has one folder in `val` but the script mimics the class directory structure of `train`, this allows us to easily create a torch dataset with `torchvision.datasets.ImageFolder`. The labels are automatically determined by the images parent folder e.g., `class_1`. The [`ILSVRC2012 development kit`](https://www.image-net.org/challenges/LSVRC/2012/2012-downloads.php) has a text file of validation image labels, but the way this script structures the `val` set we should not need this text file.
+  After running the download script, the ImageNet dataset will be organized as shown below. The raw dataset only has one folder in `val` but the script mimics the class directory structure of `train`, this allows us to easily create a torch dataset with `torchvision.datasets.ImageFolder`. The labels are automatically determined by the images parent folder e.g., `class_1`. The [`ILSVRC2012 development kit`](https://www.image-net.org/challenges/LSVRC/2012/2012-downloads.php) has a text file of validation image labels, but the way this script structures the `val` set we should not need this text file.
 
     	├── train                    
     	│   ├── class_1         
@@ -53,18 +69,31 @@ After running the download script, the ImageNet dataset will be organized as sho
     	│   ├── ...                
     	└── 
 
+</details>
+
 ## Results
-| Classifier | Pretrained | Dataset            | Accuracy (top 1) / Epoch | Notes                                                               |
-|------------|------------|--------------------|--------------------------|---------------------------------------------------------------------|
-| ResNet50   | Scratch    | ImageNet-1k (2012) | 74.9% / 96               |                                                                     |
-| ViT-B/16   | Scratch    | ImageNet-1k (2012) | 65.7% / 114              | Accuracy was still slowly increasing, but my tiny GPU wanted a break|
-| Swin-B     | Scratch    | ImageNet-1k (2012) | 69.3% / 64               | Accuracy was still increasing, but my tiny GPU wanted a break       |
+| Classifier   | Pretrained   | Dataset            | Accuracy (top 1) / Epoch | Notes                                                               |
+|--------------|--------------|--------------------|--------------------------|---------------------------------------------------------------------|
+| ResNet50     | Scratch      | ImageNet-1k (2012) | 74.9% / 96               |                                                                     |
+| ViT-B/16     | Scratch      | ImageNet-1k (2012) | 65.7% / 114              | Accuracy was still slowly increasing, but my tiny GPU wanted a break|
+| Swin-B Win 7 | Scratch      | ImageNet-1k (2012) | 69.3% / 64               | Accuracy was still increasing, but my tiny GPU wanted a break       |
+| Swin-B Win 7 | SimMIM Win 6 | ImageNet-1k (2012) | 74.4% / 65               | Set to 300 epochs so the LR scheduler was not optimize              |
+
+
+## SimMIM pixel predictions
+| Backbone   | Epochs     | Dataset            | Base Config                                                | Model config                                          |
+|------------|------------|--------------------|------------------------------------------------------------|-------------------------------------------------------|
+| Swin-B     | 100        | ImageNet-1k (2012) | `configs/train-imagenet-swin-simmim-img-192-100-epoch.yaml`| `configs/simmim/simmim-swin-b-patch-4-window-6.yaml`  |                                                                     |
+
+<img src="https://github.com/user-attachments/assets/af890ad4-a503-4814-8fa4-39200af61416" width="500">
+
+## Learning rate schedulers
+__Cosine decay with warmup__
+
+This learning rate scheduler performs a linear warmup for `n` epochs and then slowly decays following a cosine wave (half a cosine wave) for the total number of epochs
+
+<img src="https://github.com/user-attachments/assets/c1734027-d1c1-4acb-a0c4-8fc4282baa69" width="500">
+
 
 ## Explanations
 * [Swin's relative position bias]()
-
-## Visuals
-### Learning rate schedulers
-Visuals of the learning rate schedulers to get an intuitive idea of how they work in practice.
-TODO Warmup cosine decay
-
