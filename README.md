@@ -46,8 +46,10 @@ Download the ImageNet and prepare it for training with the following commands:
 cd data
 bash get_imagenet_2012.sh
 ```
+<details>
+  <summary>Folder structure</summary>
 
-After running the download script, the ImageNet dataset will be organized as shown below. The raw dataset only has one folder in `val` but the script mimics the class directory structure of `train`, this allows us to easily create a torch dataset with `torchvision.datasets.ImageFolder`. The labels are automatically determined by the images parent folder e.g., `class_1`. The [`ILSVRC2012 development kit`](https://www.image-net.org/challenges/LSVRC/2012/2012-downloads.php) has a text file of validation image labels, but the way this script structures the `val` set we should not need this text file.
+  After running the download script, the ImageNet dataset will be organized as shown below. The raw dataset only has one folder in `val` but the script mimics the class directory structure of `train`, this allows us to easily create a torch dataset with `torchvision.datasets.ImageFolder`. The labels are automatically determined by the images parent folder e.g., `class_1`. The [`ILSVRC2012 development kit`](https://www.image-net.org/challenges/LSVRC/2012/2012-downloads.php) has a text file of validation image labels, but the way this script structures the `val` set we should not need this text file.
 
     	├── train                    
     	│   ├── class_1         
@@ -66,6 +68,8 @@ After running the download script, the ImageNet dataset will be organized as sho
     	│   │   ├── img_2.jpeg  
     	│   ├── ...                
     	└── 
+
+</details>
 
 ## Results
 | Classifier   | Pretrained   | Dataset            | Accuracy (top 1) / Epoch | Notes                                                               |
