@@ -3,7 +3,7 @@
 
 # Whether to run in development/debugging mode; this only uses a few samples in in the train/val dataset
 # to quickly run the code as well as sets num_workers=0
-dev_mode: True
+dev_mode: False
 
 amp:
   # using amp is determined by device but one can override it here; True = disable amp
@@ -16,7 +16,7 @@ amp:
 output_dir: "output"
 
 # Experiment name; this will be used for the output directory; use "development" when developing
-exp_name: "development"
+exp_name: "simmim-swin-finetune"
 
 # Name of dataset; must be one of the names in the dataset_map dict
 dataset_name: "ImageNet"
@@ -47,15 +47,16 @@ train:
   epochs: 300
 
   # Number of epochs to checkpoint after; use 'null' to turn off checkpointing
-  ckpt_epochs: 15
+  ckpt_epochs: 10
 
 
-  # pretrained model path to then finetune from
-  #pretrained_path: /mnt/d/model-registry/backbones/swin_simmim/swin-b-100-epochs-win-6-img-192/train/checkpoints/checkpoint0100.pt
+  # pretrained model path to then finetune from; typically from simmim pretraining
+  # only the model's parameters state_dict are loaded, not the optimizer or scheduler state_dicts
+  pretrained_path: /mnt/d/model-registry/backbones/swin_simmim/swin-b-100-epochs-win-6-img-192/train/checkpoints/checkpoint0100.pt
 
   # Path of weights file (.pt) to resume training; not to be used for loading pretrained weights like simmim
   # use `null` to train a new model from scratch
-  checkpoint_path: /mnt/d/model-registry/backbones/swin_simmim/swin-b-100-epochs-win-6-img-192/train/checkpoints/checkpoint0100.pt
+  checkpoint_path:
 
 # solver params: optimzer, lr scheduler, etc.
 solver:

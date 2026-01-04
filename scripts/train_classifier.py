@@ -218,7 +218,7 @@ def main(
         # NOTE: does not really make sense to have a backbone_lr and optimizer strategy
         #       like in my detectors repo since the backbone is just the classifier
     )
-
+    
     total_steps = (len(dataloader_train) * epochs) // grad_accum_steps
     log.info(
         "total effective steps (steps * epochs // grad_accum_steps): %d", total_steps
@@ -251,6 +251,7 @@ def main(
         "start_epoch": 1,
         "epochs": epochs,
         "ckpt_epochs": train_args["ckpt_epochs"],
+        "pretrained_path": train_args["pretrained_path"],
         "checkpoint_path": train_args["checkpoint_path"],
     }
     trainer.train(**trainer_args)

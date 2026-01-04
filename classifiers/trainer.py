@@ -104,14 +104,11 @@ class BaseTrainer(ABC):
     @torch.no_grad()
     def _evaluate(
         self,
-        criterion: nn.Module,
         dataloader_val: Iterable,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """A single forward pass to evaluate the val set after training an epoch
 
         Args:
-            criterion: Loss function; only used to inspect the loss on the val set,
-                       not used for backpropagation
             dataloader_val: Dataloader for the validation set
             device: Device to run the model on
 
@@ -123,7 +120,7 @@ class BaseTrainer(ABC):
         loss, top1 = evaluate(
             self.model,
             dataloader_val,
-            criterion,
+            self.criterion,
             device=self.device,
         )
 
@@ -169,6 +166,7 @@ class ClassificationTrainer(BaseTrainer):
         start_epoch: int = 1,
         epochs: int = 100,
         ckpt_epochs: int = 10,
+        pretrained_path: Optional[str] = None,
         checkpoint_path: Optional[str] = None,
     ):
         """Trains a model
@@ -187,10 +185,26 @@ class ClassificationTrainer(BaseTrainer):
                          checkpointing and calculations more intuitive
             epochs: the epoch to end training on; unless starting from a check point, this will be the number of epochs to train for
             ckpt_every: save the model after n epochs
+            pretrained_path: path the pretrained model to fine-tune from (e.g., simmim pretraining); only the
+                           model's parameters state_dict is loaded, not the optimizer or lr_scheduler; 
+                           mutually exclusive with checkpoint_path
+            checkpoint_path: the path to the trained model's state_dict to resume training from; 
+                             mutually exclusive with pretrained_path 
         """
         log.info("\ntraining started\n")
+        
+        if pretrained_path is not None and checkpoint_path is not None:
+            raise ValueError("Error: only pretrain_path or checkpoint_path can be provided, not both.")
 
-        if checkpoint_path is not None:
+        if pretrained_path is not None:
+            self._load_pretrained_model(
+                pretrained_path, self.model
+            )
+            log.info(
+                "NOTE: A pretrain file was provided, the model will finetune from this model %d",
+                start_epoch,
+            )
+        elif checkpoint_path is not None:
             start_epoch = self._load_checkpoint(
                 checkpoint_path, self.model, optimizer, self.device, scheduler
             )
@@ -198,8 +212,10 @@ class ClassificationTrainer(BaseTrainer):
                 "NOTE: A checkpoint file was provided, the model will resume training at epoch %d",
                 start_epoch,
             )
-        
-        # move the model to the GPU here since loading the checkpoint uses CPU operations in 
+        else:
+            log.info("\nTraining from scratch")
+
+        # move the model to the GPU here since loading the checkpoint uses CPU operations in
         # some cases (interpolating the relative position bias table)
         self.model.to(self.device)
 
@@ -274,7 +290,7 @@ class ClassificationTrainer(BaseTrainer):
                     acc1,
                     epoch,
                 )
-                self.save_model(
+                self._save_model(
                     optimizer, epoch, save_path=best_path, lr_scheduler=scheduler
                 )
 
@@ -283,7 +299,7 @@ class ClassificationTrainer(BaseTrainer):
                     last_best_path.unlink(missing_ok=True)
                 last_best_path = best_path
 
-            plot_loss(train_loss, val_loss, save_dir=str(self.output_dir))
+            plot_loss(train_loss, val_loss=val_loss, save_dir=str(self.output_dir))
             plot_acc1(epoch_acc1, save_dir=str(self.output_dir))
 
             # Create csv file of training stats per epoch
@@ -371,12 +387,14 @@ class ClassificationTrainer(BaseTrainer):
         losses = AverageMeter()
         top1 = AverageMeter()
         top5 = AverageMeter()
+        batch_time_meter = AverageMeter()
 
         num_steps_per_epoch = len(dataloader_train)
 
         epoch_loss = []
         epoch_lr = []  # Store lr every epoch so I can visualize the scheduler
         curr_lr = None
+        batch_time  = time.time()
         for steps, (samples, targets) in enumerate(dataloader_train, 1):
 
             samples = samples.to(self.device)
@@ -455,6 +473,10 @@ class ClassificationTrainer(BaseTrainer):
 
             epoch_loss.append(loss.item())
 
+            # update batch time meter and reset batch timer
+            batch_time_meter.update(time.time() - batch_time)
+            batch_time = time.time()
+
             if (steps) % 10 == 0:
                 # Update the learning rate plot after n steps
                 plot_lr(
@@ -464,9 +486,19 @@ class ClassificationTrainer(BaseTrainer):
                 )
 
             if (steps) % self.log_train_steps == 0:
+                
+                # estimate the time left to finish the epoch
+                eta_epoch_finished = str(
+                    datetime.timedelta(
+                        seconds=int(
+                            batch_time_meter.avg * (num_steps_per_epoch - steps)
+                        )
+                    )
+                )
+                
                 curr_lr = optimizer.param_groups[0]["lr"]
                 log.info(
-                    "epoch: %-10d iter: %d/%-12d train_loss: %-10.4f curr_lr: %-12.6f",  # -n = right padding
+                    "epoch: %-10d iter: %d/%-12d train_loss: %-10.4f curr_lr: %-12.6f eta (h:mm:ss): %s",  # -n = right padding
                     epoch,
                     steps,
                     len(dataloader_train),
@@ -474,16 +506,28 @@ class ClassificationTrainer(BaseTrainer):
                     # and overwritten every step; the gradients is what stores the accumulated information
                     loss.item() * grad_accum_steps,
                     curr_lr,
+                    eta_epoch_finished
                 )
 
         return losses
+    
+    def _load_pretrained_model(self, pretrained_path: str, model: nn.Module):
+        """TODO"""
+        if isinstance(model, SwinTransformer):
+            load_pretrained_simmim_to_swin(
+                pretrained_path, model
+            )
+        else:
+            raise ValueError(
+                f"state dict loading still needs to be implemented for {type(model)}"
+            )
+        
 
     def _load_checkpoint(
         self,
         checkpoint_path: str,
-        model: nn.Module = None,
+        model: nn.Module,
         optimizer: nn.Module = None,
-        device=torch.device("cpu"),
         lr_scheduler: Optional[nn.Module] = None,
     ):
         """TODO this probably shouldn't be tied to the model definition
@@ -493,7 +537,9 @@ class ClassificationTrainer(BaseTrainer):
 
         """
         if isinstance(model, SwinTransformer):
-            load_pretrained_simmim_to_swin(checkpoint_path, model, optimizer, device, lr_scheduler)
+            load_model_checkpoint(
+                checkpoint_path, model, optimizer, device, lr_scheduler
+            )
         else:
             raise ValueError(
                 f"state dict loading still needs to be implemented for {type(model)}"
@@ -779,7 +825,7 @@ def create_trainer(
     model: nn.Module,
     output_dir: str,
     step_lr_on: str,
-    criterion: Optional[nn.Module] = None, 
+    criterion: Optional[nn.Module] = None,
     device: torch.device = torch.device("cpu"),
     log_train_steps: int = 20,
     amp_dtype: str = "float16",

@@ -1,5 +1,5 @@
-import math
 import logging
+import math
 from typing import Optional, Union
 
 import numpy as np
@@ -1183,14 +1183,14 @@ def trunc_normal_(
 
 def load_pretrained_simmim_to_swin(
     checkpoint_path: str,
-    model: nn.Module = None,
-    optimizer: nn.Module = None,
-    device=torch.device("cpu"),
-    lr_scheduler: Optional[nn.Module] = None,
+    model: nn.Module,
 ):
     """Load the checkpoints of a trained or pretrained model from the state_dict file;
     this could be from a fully trained model or a partially trained model that you want
     to resume training from.
+    
+    This does NOT load the optimizer or lr_scheduler state_dict since these should start fresh
+    when fine-tuning from a pretrained model
 
     Args:
         checkpoint_path: path to the weights file to resume training from
@@ -1202,32 +1202,38 @@ def load_pretrained_simmim_to_swin(
     Returns:
         the epoch to resume training on
     """
-    # Load the model's state_dict
-    state_dict = torch.load(checkpoint_path, map_location=torch.device("cpu"), weights_only=True)
-    
+    # Load the model's state_dict; load's on cpu first due to interpolation of bias tables
+    state_dict = torch.load(
+        checkpoint_path, map_location=torch.device("cpu"), weights_only=True
+    )
+
     param_keys = state_dict["model"]
-    
-    if any([True if "encoder." in name else False for name in param_keys.keys() ]):
-        log.info("Detected pretrained simmim into swin; removing 'encoder.' prefix from state_dict keys")
-        param_keys = {name.replace("encoder.", ""): val for name, val in param_keys.items() if name.startswith("encoder.")}
+
+    # if the model is simmim pretrained then the parameter names will be prefixed with
+    # "encoder." due to the SimMIM architecture
+    is_pretrained = any(
+        [True if "encoder." in name else False for name in param_keys.keys()]
+    )
+
+    if is_pretrained:
+        log.info(
+            "Detected pretrained simmim into swin; removing 'encoder.' prefix from state_dict keys and interpolating relative position bias tables for each attention head "
+        )
+        param_keys = {
+            name.replace("encoder.", ""): val
+            for name, val in param_keys.items()
+            if name.startswith("encoder.")
+        }
     else:
-        log.info("Non-pretrained simmim detected; loading weights normally")
+        raise ValueError("Non-pretrained simmim detected, something went wrong")
 
     # load the state dictionaries for the necessary training modules
-    if model is not None:
-        breakpoint()
-        # start here see if the keys remapped correctly
-        remapped_param_keys = remap_pretrained_keys_swin(model, param_keys)
-        missing_keys, _ = model.load_state_dict(remapped_param_keys)
-    if optimizer is not None:
-        optimizer.load_state_dict(state_dict["optimizer"])
-    if lr_scheduler is not None:
-        lr_scheduler.load_state_dict(state_dict["lr_scheduler"])
 
-    start_epoch = 1
-    if "epoch" in weights:
-        # should only be False if loading a model not trained with this repo
-        start_epoch = weights["epoch"]
+    # start here see if the keys remapped correctly
+    # TODO: verify this works for resuming trainiing
+    if is_pretrained:
+        param_keys = remap_pretrained_keys_swin(model, param_keys)
+    missing_keys, _ = model.load_state_dict(param_keys, strict=False)
 
     if not missing_keys:
         print("\nAll keys matched the model when loading its state dict")
@@ -1236,37 +1242,35 @@ def load_pretrained_simmim_to_swin(
             f"\nNot all keys matched the model when loading the state dict; missing keys: {missing_keys}"
         )
 
-    return start_epoch
-
 
 def remap_pretrained_keys_swin(model, checkpoint_model):
     """Remap a simmim pretrained swin model when the window size differs
-    
+
     This essentially uses a geometric interpolation (a geometric series to exponetially grow
     the distances at each cell) to convert a relative position bias table of one size
     to another size (e.g., a simmim model trained using a window size of 6 but finetuning
     swin on a window size of 7); this code assumes that cells towards the center are more
     impactful than cells further away from the center in the table
-    
+
     Additionally, the following keys are deleted because they're always reinitialized
     relative_position_index, relative_coords_table, and attn_mask
-    
+
     NOTE: the interpolation function was modified because scipy.interpolate.interp2d
     is deprecated which was in the original swin code
-    
+
     Args:
         model: the model to the load the weights in
         chckpoint_model: the model to load the weights from
     """
     state_dict = model.state_dict()
-    
+
     # Geometric interpolation when pre-trained patch size mismatch with fine-tuned patch size
     all_keys = list(checkpoint_model.keys())
     for key in all_keys:
         if "relative_position_bias_table" in key:
             relative_position_bias_table_pretrained = checkpoint_model[key]
             relative_position_bias_table_current = state_dict[key]
-            
+
             # extract the number of relative positions (L) and number of heads (nH)
             L1, nH1 = relative_position_bias_table_pretrained.size()
             L2, nH2 = relative_position_bias_table_current.size()
@@ -1275,30 +1279,34 @@ def remap_pretrained_keys_swin(model, checkpoint_model):
                 # number of heads must match or we cannot load the pretrained model
                 # if this happens its likey that we pretrained a different swin variant than
                 # we're trying to finetune (e.g., swin-b)
-                logger.info(f"Error in loading {key}, the number of attentions heads differ")
+                logger.info(
+                    f"Error in loading {key}, the number of attentions heads differ"
+                )
             else:
                 if L1 != L2:
-                    log.info(f"{key}: Interpolate relative_position_bias_table using geo.")
-                    
-                    # get the length of one side of each table; relative position bias table is a 
+                    log.info(
+                        f"{key}: Interpolate relative_position_bias_table using geo."
+                    )
+
+                    # get the length of one side of each table; relative position bias table is a
                     # flattened square
-                    src_size = int(L1 ** 0.5)
-                    dst_size = int(L2 ** 0.5)
+                    src_size = int(L1**0.5)
+                    dst_size = int(L2**0.5)
 
                     def geometric_progression(a, r, n):
                         """Computes the sum of the first n terms of a geometric series
                         (n=num terms, r=geometric/common ratio, a=first term in the sequence)
                         """
-                        return a * (1.0 - r ** n) / (1.0 - r)
+                        return a * (1.0 - r**n) / (1.0 - r)
 
-                    # compute the geometric ratio, q, such that the sum of distances in the 
-                    # geometric series matches half the target table size using binary search 
+                    # compute the geometric ratio, q, such that the sum of distances in the
+                    # geometric series matches half the target table size using binary search
                     # between [1.01, 1.5]; the sum of the geometric series tell us the full distance
-                    # (i.e., the sum of each cell distance in the table); q represents the growth factor 
-                    # in the geometric sequence and controls how quickly the spacing expands away from the 
-                    # center: 1,1⋅q,1⋅q2,1⋅q3,…; each term in geometric progression/sequence tells us the 
-                    # distance between each cell in the grid, this process assumes that the center of the 
-                    # bias table is more important than the ones further out since it increases exponentially; 
+                    # (i.e., the sum of each cell distance in the table); q represents the growth factor
+                    # in the geometric sequence and controls how quickly the spacing expands away from the
+                    # center: 1,1⋅q,1⋅q2,1⋅q3,…; each term in geometric progression/sequence tells us the
+                    # distance between each cell in the grid, this process assumes that the center of the
+                    # bias table is more important than the ones further out since it increases exponentially;
                     # we use half the table size to represent the distance in each direction
                     left, right = 1.01, 1.5
                     while right - left > 1e-6:
@@ -1313,7 +1321,7 @@ def remap_pretrained_keys_swin(model, checkpoint_model):
                     #     q = 1.090307
 
                     # build the source positions by
-                    # computing the cumulative sum of the geometric series; each term of the 
+                    # computing the cumulative sum of the geometric series; each term of the
                     # geometric series represents the distance between consecutive points
                     # Example:
                     #   1 → first step from center
@@ -1332,7 +1340,7 @@ def remap_pretrained_keys_swin(model, checkpoint_model):
                     x = r_ids + [0] + dis
                     y = r_ids + [0] + dis
 
-                    # define the target positions of the new relative position bias grid 
+                    # define the target positions of the new relative position bias grid
                     # [-t, t] e.g., win size 7 -> [-6, 6]; later we'll interpolate this
                     # original values onto this grid
                     t = dst_size // 2.0
@@ -1341,31 +1349,44 @@ def remap_pretrained_keys_swin(model, checkpoint_model):
 
                     log.info("Original positions = %s" % str(x))
                     log.info("Target positions = %s" % str(dx))
-                    
-                    # NOTE: this code was added because 
+
+                    # NOTE: this code was added because
                     # scipy.interpolate.interp2d is deprecated (in original swin code)
-                    DX, DY = np.meshgrid(dx, dy, indexing='ij')
+                    DX, DY = np.meshgrid(dx, dy, indexing="ij")
                     query_points = np.stack([DX.ravel(), DY.ravel()], axis=1)
 
                     # interpolate each attention head (since there's a bias table per head)
                     all_rel_pos_bias = []
                     for i in range(nH1):
-                        z = relative_position_bias_table_pretrained[:, i].view(src_size, src_size).float().numpy()
-                        f_cubic = RegularGridInterpolator((x, y), z, method='cubic')
-                        all_rel_pos_bias.append(torch.Tensor(f_cubic(query_points)).contiguous().view(-1, 1).to(
-                            relative_position_bias_table_pretrained.device))
+                        z = (
+                            relative_position_bias_table_pretrained[:, i]
+                            .view(src_size, src_size)
+                            .float()
+                            .numpy()
+                        )
+                        f_cubic = RegularGridInterpolator((x, y), z, method="cubic")
+                        all_rel_pos_bias.append(
+                            torch.Tensor(f_cubic(query_points))
+                            .contiguous()
+                            .view(-1, 1)
+                            .to(relative_position_bias_table_pretrained.device)
+                        )
 
                     # stack the newly interpolated bias table into the tensor and update the param key
                     new_rel_pos_bias = torch.cat(all_rel_pos_bias, dim=-1)
                     checkpoint_model[key] = new_rel_pos_bias
 
     # delete relative_position_index since we always re-init it
-    relative_position_index_keys = [k for k in checkpoint_model.keys() if "relative_position_index" in k]
+    relative_position_index_keys = [
+        k for k in checkpoint_model.keys() if "relative_position_index" in k
+    ]
     for k in relative_position_index_keys:
         del checkpoint_model[k]
 
     # delete relative_coords_table since we always re-init it
-    relative_coords_table_keys = [k for k in checkpoint_model.keys() if "relative_coords_table" in k]
+    relative_coords_table_keys = [
+        k for k in checkpoint_model.keys() if "relative_coords_table" in k
+    ]
     for k in relative_coords_table_keys:
         del checkpoint_model[k]
 
